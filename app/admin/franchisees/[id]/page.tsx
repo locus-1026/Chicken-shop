@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { notFound, useParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
@@ -24,6 +24,8 @@ import {
   Mail,
   PhoneCall,
   FileWarning,
+  FileSignature,
+  X,
   Store,
   TrendingUp,
   Receipt,
@@ -35,12 +37,34 @@ import {
   ChevronRight,
 } from "lucide-react";
 
+const RENEWAL_KEY = (id: string) => `cc.contract-renewal.${id}`;
+type Renewal = { newEnd: string; renewedAt: string; term: string; notes?: string };
+
 export default function FranchiseeDetailPage() {
   const params = useParams<{ id: string }>();
   const toast = useToast();
   const [action, setAction] = useState<ActionKind | null>(null);
+  const [renewOpen, setRenewOpen] = useState(false);
+  const [renewal, setRenewal] = useState<Renewal | null>(null);
   const franchisee = mockFranchisees.find((f) => f.id === params.id);
+
+  useEffect(() => {
+    if (!franchisee || typeof window === "undefined") return;
+    const raw = window.localStorage.getItem(RENEWAL_KEY(franchisee.id));
+    setRenewal(raw ? (JSON.parse(raw) as Renewal) : null);
+  }, [franchisee]);
+
   if (!franchisee) return notFound();
+
+  // Use the renewed end date if a renewal has been recorded.
+  const effectiveEnd = renewal?.newEnd ?? franchisee.agreement_end;
+
+  const saveRenewal = (r: Renewal) => {
+    setRenewal(r);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(RENEWAL_KEY(franchisee.id), JSON.stringify(r));
+    }
+  };
 
   const outlets = mockOutlets.filter((o) => o.franchisee_id === franchisee.id);
   const outletIds = outlets.map((o) => o.id);
@@ -79,7 +103,7 @@ export default function FranchiseeDetailPage() {
       .map(([date, value]) => ({ date, value }));
   }, [outletIds]);
 
-  const contractDaysLeft = daysUntil(franchisee.agreement_end);
+  const contractDaysLeft = daysUntil(effectiveEnd);
   const contractTone: "success" | "warning" | "danger" =
     contractDaysLeft <= 30 ? "danger" : contractDaysLeft <= 90 ? "warning" : "success";
 
@@ -112,7 +136,7 @@ export default function FranchiseeDetailPage() {
               {franchisee.risk_flag && <Pill tone="danger" className="ml-2">At-risk flag</Pill>}
             </div>
             <div className="mt-1 text-[12px] text-[color:var(--color-ink-soft)]">
-              IC {franchisee.ic_number} · {outlets.length} outlet{outlets.length !== 1 ? "s" : ""} · Agreement {formatDate(franchisee.agreement_start)} → {formatDate(franchisee.agreement_end)}
+              IC {franchisee.ic_number} · {outlets.length} outlet{outlets.length !== 1 ? "s" : ""} · Agreement {formatDate(franchisee.agreement_start)} → {formatDate(effectiveEnd)}
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -327,11 +351,28 @@ export default function FranchiseeDetailPage() {
 
       <div className="grid gap-5 lg:grid-cols-2">
         <Card>
-          <CardTitle>Contract</CardTitle>
-          <CardSubtitle>Agreement term + renewal timing.</CardSubtitle>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle>Contract</CardTitle>
+              <CardSubtitle>Agreement term + renewal timing.</CardSubtitle>
+            </div>
+            <Button size="sm" onClick={() => setRenewOpen(true)}>
+              <FileSignature size={14} /> Renew contract
+            </Button>
+          </div>
           <div className="mt-3 space-y-2 text-sm">
             <Row label="Agreement start" value={formatDate(franchisee.agreement_start)} />
-            <Row label="Agreement end"   value={formatDate(franchisee.agreement_end)} />
+            <Row
+              label="Agreement end"
+              value={
+                <span className="inline-flex items-center gap-2">
+                  {formatDate(effectiveEnd)}
+                  {renewal && (
+                    <Pill tone="brand" className="ml-1">Renewed</Pill>
+                  )}
+                </span>
+              }
+            />
             <Row
               label="Days remaining"
               value={
@@ -341,6 +382,12 @@ export default function FranchiseeDetailPage() {
               }
             />
             <Row label="Status" value={<Pill tone={franchisee.status === "active" ? "success" : "warning"}>{franchisee.status}</Pill>} />
+            {renewal && (
+              <div className="rounded-xl border border-[color:var(--color-brand-200)] bg-[color:var(--color-brand-50)] px-3 py-2 text-[12px] text-[color:var(--color-brand-700)]">
+                Renewed {formatDate(renewal.renewedAt)} · {renewal.term}
+                {renewal.notes && <div className="mt-1 italic text-[color:var(--color-ink-soft)]">{renewal.notes}</div>}
+              </div>
+            )}
           </div>
         </Card>
 
@@ -383,6 +430,158 @@ export default function FranchiseeDetailPage() {
           }}
         />
       )}
+
+      {renewOpen && (
+        <RenewContractModal
+          businessName={franchisee.business_name}
+          ownerName={franchisee.owner_name}
+          currentEnd={effectiveEnd}
+          onClose={() => setRenewOpen(false)}
+          onConfirm={(r) => {
+            saveRenewal(r);
+            setRenewOpen(false);
+            toast("success", `Contract renewed — now ends ${formatDate(r.newEnd)}.`);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function RenewContractModal({
+  businessName,
+  ownerName,
+  currentEnd,
+  onClose,
+  onConfirm,
+}: {
+  businessName: string;
+  ownerName: string;
+  currentEnd: string;
+  onClose: () => void;
+  onConfirm: (r: Renewal) => void;
+}) {
+  const addYears = (iso: string, years: number) => {
+    const d = new Date(iso);
+    d.setFullYear(d.getFullYear() + years);
+    return d.toISOString().slice(0, 10);
+  };
+
+  const [term, setTerm] = useState<1 | 2 | 3 | 5 | "custom">(3);
+  const [customEnd, setCustomEnd] = useState(addYears(currentEnd, 3));
+  const [notes, setNotes] = useState("");
+
+  const newEnd = term === "custom" ? customEnd : addYears(currentEnd, term);
+
+  const submit = () => {
+    if (!newEnd || new Date(newEnd) <= new Date(currentEnd)) {
+      return;
+    }
+    onConfirm({
+      newEnd,
+      renewedAt: new Date().toISOString(),
+      term: term === "custom" ? `Custom — ends ${formatDate(newEnd)}` : `+${term} year${term > 1 ? "s" : ""}`,
+      notes: notes.trim() || undefined,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-lg overflow-hidden rounded-[20px] border border-[color:var(--color-border)] bg-white shadow-xl"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-[color:var(--color-border)] p-5">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-[color:var(--color-brand-700)]">
+              Renew franchise contract
+            </div>
+            <h3 className="mt-0.5 text-lg font-semibold">{businessName}</h3>
+            <div className="mt-0.5 text-[12px] text-[color:var(--color-ink-soft)]">
+              Owner {ownerName} · Current end {formatDate(currentEnd)}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-full p-1.5 text-[color:var(--color-ink-soft)] hover:bg-[color:var(--color-brand-50)]"
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="space-y-4 p-5">
+          <div>
+            <div className="text-[12px] font-medium text-[color:var(--color-ink-soft)]">Renewal term</div>
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
+              {([1, 2, 3, 5] as const).map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setTerm(n)}
+                  className={
+                    "rounded-xl border px-3 py-2 text-sm font-semibold transition-colors " +
+                    (term === n
+                      ? "border-[color:var(--color-brand)] bg-[color:var(--color-brand-50)] text-[color:var(--color-brand-700)]"
+                      : "border-[color:var(--color-border)] bg-white text-[color:var(--color-ink)] hover:border-[color:var(--color-brand-200)]")
+                  }
+                >
+                  +{n} year{n > 1 ? "s" : ""}
+                </button>
+              ))}
+              <button
+                onClick={() => setTerm("custom")}
+                className={
+                  "rounded-xl border px-3 py-2 text-sm font-semibold transition-colors " +
+                  (term === "custom"
+                    ? "border-[color:var(--color-brand)] bg-[color:var(--color-brand-50)] text-[color:var(--color-brand-700)]"
+                    : "border-[color:var(--color-border)] bg-white text-[color:var(--color-ink)] hover:border-[color:var(--color-brand-200)]")
+                }
+              >
+                Custom
+              </button>
+            </div>
+          </div>
+
+          {term === "custom" && (
+            <label className="block">
+              <span className="text-[12px] font-medium text-[color:var(--color-ink-soft)]">New end date</span>
+              <input
+                type="date"
+                value={customEnd}
+                min={new Date(currentEnd).toISOString().slice(0, 10)}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="mt-1 w-full rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2.5 text-sm"
+              />
+            </label>
+          )}
+
+          <div className="rounded-xl border border-[color:var(--color-brand-200)] bg-[color:var(--color-brand-50)] px-3 py-2.5 text-[13px] text-[color:var(--color-brand-700)]">
+            New agreement end: <b>{formatDate(newEnd)}</b>
+          </div>
+
+          <label className="block">
+            <span className="text-[12px] font-medium text-[color:var(--color-ink-soft)]">Notes (optional)</span>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              placeholder="e.g. Renewed on improved terms after Q1 performance review."
+              className="mt-1 w-full rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2.5 text-sm"
+            />
+          </label>
+
+          <div className="rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-background)] px-3 py-2.5 text-[12px] text-[color:var(--color-ink-soft)]">
+            Both franchisor and franchisee will receive the renewal e-packet. The existing royalty and marketing levy carry over unless you attach an amendment.
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-[color:var(--color-border)] bg-[color:var(--color-background)] p-4">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={submit} disabled={new Date(newEnd) <= new Date(currentEnd)}>
+            <FileSignature size={14} /> Confirm renewal
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
