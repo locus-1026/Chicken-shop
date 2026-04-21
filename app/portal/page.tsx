@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
@@ -9,7 +10,16 @@ import { SalesDonut } from "@/components/charts/SalesDonut";
 import { mockRoyalties, mockAudits } from "@/lib/mock-data";
 import { useCurrentOutlet } from "@/lib/current-outlet";
 import { RM, RM2, daysUntil, formatDate } from "@/lib/utils";
-import { Receipt, GraduationCap, ShoppingBasket, LifeBuoy, AlertTriangle, Check, Clock } from "lucide-react";
+import { Receipt, GraduationCap, ShoppingBasket, LifeBuoy, AlertTriangle, Check, Clock, ArrowUpRight } from "lucide-react";
+
+const CHECKLIST_KEY = (outletId: string) => `cc.checklist.${outletId}`;
+type ChecklistItem = { id: number; label: string; overdue: boolean; href: string };
+const baseTodos: ChecklistItem[] = [
+  { id: 1, label: "Submit today's sales report",       overdue: false, href: "/portal/sales" },
+  { id: 2, label: "Complete Food Safety SOP training", overdue: true,  href: "/portal/training" },
+  { id: 3, label: "Settle this month's royalty",       overdue: false, href: "/portal/royalty" },
+  { id: 4, label: "Review latest marketing pack",      overdue: false, href: "/portal/marketing" },
+];
 
 export default function PortalHome() {
   const { outlet, franchisee } = useCurrentOutlet();
@@ -28,12 +38,24 @@ export default function PortalHome() {
     .filter((a) => a.outlet_id === outlet.id)
     .sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1))[0];
 
-  const todos = [
-    { id: 1, label: "Submit today's sales report", done: false, overdue: false, href: "/portal/sales" },
-    { id: 2, label: "Complete Food Safety SOP training", done: false, overdue: true, href: "/portal/training" },
-    { id: 3, label: "Settle April royalty", done: false, overdue: false, href: "/portal/royalty" },
-    { id: 4, label: "Review Mother's Day marketing pack", done: true, overdue: false, href: "/portal/marketing" },
-  ];
+  // Per-outlet checklist state persisted to localStorage so ticks survive refreshes.
+  const [doneMap, setDoneMap] = useState<Record<number, boolean>>({});
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem(CHECKLIST_KEY(outlet.id));
+    setDoneMap(raw ? JSON.parse(raw) : { 4: true });
+  }, [outlet.id]);
+
+  const toggleDone = (id: number) => {
+    const next = { ...doneMap, [id]: !doneMap[id] };
+    setDoneMap(next);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(CHECKLIST_KEY(outlet.id), JSON.stringify(next));
+    }
+  };
+
+  const todos = baseTodos.map((t) => ({ ...t, done: !!doneMap[t.id] }));
 
   return (
     <div className="space-y-6">
@@ -120,32 +142,46 @@ export default function PortalHome() {
             </div>
             <ul className="mt-3 space-y-2">
               {todos.map((t) => (
-                <li key={t.id}>
+                <li
+                  key={t.id}
+                  className="flex items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 transition-colors hover:border-[color:var(--color-border)] hover:bg-[color:var(--color-brand-50)]/50"
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleDone(t.id)}
+                    aria-pressed={t.done}
+                    aria-label={t.done ? "Mark as not done" : "Mark as done"}
+                    className={
+                      "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-colors " +
+                      (t.done
+                        ? "border-[color:var(--color-success)] bg-[color:var(--color-success)] text-white"
+                        : "border-[color:var(--color-border)] bg-white hover:border-[color:var(--color-brand)]")
+                    }
+                  >
+                    {t.done && <Check size={14} />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleDone(t.id)}
+                    className={
+                      "flex-1 text-left text-sm " +
+                      (t.done
+                        ? "line-through text-[color:var(--color-ink-soft)]"
+                        : t.overdue
+                        ? "text-[color:var(--color-danger)] font-medium"
+                        : "text-[color:var(--color-ink)]")
+                    }
+                  >
+                    {t.label}
+                  </button>
+                  {t.overdue && !t.done && <Pill tone="danger">Overdue</Pill>}
                   <Link
                     href={t.href}
-                    className="flex items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 transition-colors hover:border-[color:var(--color-border)] hover:bg-[color:var(--color-brand-50)]/50"
+                    className="shrink-0 rounded-full p-1 text-[color:var(--color-ink-soft)] hover:bg-[color:var(--color-brand-50)] hover:text-[color:var(--color-brand-700)]"
+                    title="Open page"
+                    aria-label={`Open ${t.label}`}
                   >
-                    <span
-                      className={
-                        "flex h-5 w-5 items-center justify-center rounded-full border " +
-                        (t.done ? "border-[color:var(--color-success)] bg-[color:var(--color-success)] text-white" : "border-[color:var(--color-border)]")
-                      }
-                    >
-                      {t.done && <Check size={12} />}
-                    </span>
-                    <span
-                      className={
-                        "flex-1 text-sm " +
-                        (t.done
-                          ? "line-through text-[color:var(--color-ink-soft)]"
-                          : t.overdue
-                          ? "text-[color:var(--color-danger)] font-medium"
-                          : "text-[color:var(--color-ink)]")
-                      }
-                    >
-                      {t.label}
-                    </span>
-                    {t.overdue && !t.done && <Pill tone="danger">Overdue</Pill>}
+                    <ArrowUpRight size={14} />
                   </Link>
                 </li>
               ))}
