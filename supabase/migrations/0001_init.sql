@@ -154,8 +154,35 @@ create table public.announcement_reads (
 create or replace function public.current_profile()
 returns public.profiles
 language sql stable security definer
+set search_path = public
 as $$
   select * from public.profiles where id = auth.uid();
+$$;
+
+-- SECURITY DEFINER helpers — bypass RLS on profiles so admin/franchisee
+-- checks inside policies don't recurse back through profile policies.
+create or replace function public.is_admin()
+returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select coalesce((select role = 'admin' from public.profiles where id = auth.uid()), false);
+$$;
+
+create or replace function public.my_franchisee_id()
+returns uuid
+language sql stable security definer
+set search_path = public
+as $$
+  select franchisee_id from public.profiles where id = auth.uid();
+$$;
+
+create or replace function public.my_assigned_states()
+returns text[]
+language sql stable security definer
+set search_path = public
+as $$
+  select assigned_states from public.profiles where id = auth.uid();
 $$;
 
 -- RLS
@@ -172,84 +199,53 @@ alter table public.support_tickets enable row level security;
 alter table public.announcements enable row level security;
 alter table public.announcement_reads enable row level security;
 
--- Admin-all policy helper
-create policy "admin all profiles" on public.profiles for all using (
-  exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
-);
+-- Profiles: self-read + admin-read (using is_admin() which bypasses RLS)
 create policy "self read profile" on public.profiles for select using (id = auth.uid());
+create policy "admin read profiles" on public.profiles for select using (public.is_admin());
+create policy "admin write profiles" on public.profiles for all using (public.is_admin()) with check (public.is_admin());
 
-create policy "admin all franchisees" on public.franchisees for all using (
-  exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
-);
-create policy "franchisee read own" on public.franchisees for select using (
-  id = (select franchisee_id from public.profiles where id = auth.uid())
-);
+create policy "admin all franchisees" on public.franchisees for all using (public.is_admin()) with check (public.is_admin());
+create policy "franchisee read own franchisee" on public.franchisees for select using (id = public.my_franchisee_id());
 
-create policy "admin all outlets" on public.outlets for all using (
-  exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
-);
-create policy "franchisee read own outlets" on public.outlets for select using (
-  franchisee_id = (select franchisee_id from public.profiles where id = auth.uid())
-);
+create policy "admin all outlets" on public.outlets for all using (public.is_admin()) with check (public.is_admin());
+create policy "franchisee read own outlets" on public.outlets for select using (franchisee_id = public.my_franchisee_id());
 create policy "regional read outlets" on public.outlets for select using (
-  exists (
-    select 1 from public.profiles p
-    where p.id = auth.uid()
-      and p.role = 'regional_manager'
-      and outlets.state = any(p.assigned_states)
-  )
+  state = any(public.my_assigned_states())
 );
 
--- Repeat select-own pattern for downstream tables
-create policy "admin all royalties" on public.royalties for all using (
-  exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
-);
+create policy "admin all royalties" on public.royalties for all using (public.is_admin()) with check (public.is_admin());
 create policy "franchisee read own royalties" on public.royalties for select using (
-  outlet_id in (select id from public.outlets where franchisee_id =
-    (select franchisee_id from public.profiles where id = auth.uid()))
+  outlet_id in (select id from public.outlets where franchisee_id = public.my_franchisee_id())
 );
 
-create policy "admin all sales" on public.sales_reports for all using (
-  exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
-);
+create policy "admin all sales" on public.sales_reports for all using (public.is_admin()) with check (public.is_admin());
 create policy "franchisee rw own sales" on public.sales_reports for all using (
-  outlet_id in (select id from public.outlets where franchisee_id =
-    (select franchisee_id from public.profiles where id = auth.uid()))
+  outlet_id in (select id from public.outlets where franchisee_id = public.my_franchisee_id())
+) with check (
+  outlet_id in (select id from public.outlets where franchisee_id = public.my_franchisee_id())
 );
 
 create policy "all read training modules" on public.training_modules for select using (true);
-create policy "admin manage training" on public.training_modules for all using (
-  exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
-);
+create policy "admin manage training" on public.training_modules for all using (public.is_admin()) with check (public.is_admin());
 
-create policy "self training progress" on public.training_progress for all using (user_id = auth.uid());
-create policy "admin all training progress" on public.training_progress for all using (
-  exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
-);
+create policy "self training progress" on public.training_progress for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "admin all training progress" on public.training_progress for all using (public.is_admin()) with check (public.is_admin());
 
-create policy "admin all audits" on public.compliance_audits for all using (
-  exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
-);
+create policy "admin all audits" on public.compliance_audits for all using (public.is_admin()) with check (public.is_admin());
 create policy "franchisee read own audits" on public.compliance_audits for select using (
-  outlet_id in (select id from public.outlets where franchisee_id =
-    (select franchisee_id from public.profiles where id = auth.uid()))
+  outlet_id in (select id from public.outlets where franchisee_id = public.my_franchisee_id())
 );
 
 create policy "all read marketing" on public.marketing_assets for select using (true);
-create policy "admin manage marketing" on public.marketing_assets for all using (
-  exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
-);
+create policy "admin manage marketing" on public.marketing_assets for all using (public.is_admin()) with check (public.is_admin());
 
-create policy "self tickets" on public.support_tickets for all using (submitted_by = auth.uid());
-create policy "admin all tickets" on public.support_tickets for all using (
-  exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
-);
+create policy "self tickets" on public.support_tickets for all using (submitted_by = auth.uid()) with check (submitted_by = auth.uid());
+create policy "admin all tickets" on public.support_tickets for all using (public.is_admin()) with check (public.is_admin());
 
 create policy "all read announcements" on public.announcements for select using (true);
-create policy "admin manage announcements" on public.announcements for all using (
-  exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin')
-);
-create policy "self reads" on public.announcement_reads for all using (user_id = auth.uid());
+create policy "admin manage announcements" on public.announcements for all using (public.is_admin()) with check (public.is_admin());
+
+create policy "self reads" on public.announcement_reads for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 -- Auto billing function
 create or replace function public.generate_monthly_royalties()
