@@ -1,6 +1,8 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-@theme {
+:root {
   --color-brand: #E8590C;
   --color-brand-50: #FFF2E6;
   --color-brand-100: #FFE0C2;
@@ -20,28 +22,21 @@
   --color-danger: #A32D2D;
   --color-danger-soft: #F6D9D9;
   --color-border: rgba(232, 89, 12, 0.15);
-
-  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
-
-  --radius-card: 16px;
-  --shadow-lift: 0 12px 28px -14px rgba(45, 26, 14, 0.25);
 }
 
 html, body {
   background: var(--color-background);
   color: var(--color-ink);
-  font-family: var(--font-sans);
+  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
 * { box-sizing: border-box; }
 
-/* Custom scrollbars on the lighter brand */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--color-brand-100); border-radius: 9999px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-brand-200); }
 
-/* Skeleton shimmer */
 .skeleton {
   background: linear-gradient(90deg, #F4E7D6 25%, #FBEFE0 37%, #F4E7D6 63%);
   background-size: 400% 100%;
