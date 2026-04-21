@@ -4,9 +4,9 @@ import { useRef, useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
-import { mockAnnouncements } from "@/lib/mock-data";
+import { mockAnnouncements, mockFranchisees } from "@/lib/mock-data";
 import { formatDate } from "@/lib/utils";
-import type { Announcement, UserRole } from "@/lib/types";
+import type { Announcement } from "@/lib/types";
 import { Send, Eye } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
 
@@ -21,7 +21,12 @@ export default function AdminAnnouncementsPage() {
   const toast = useToast();
   const [list, setList] = useState<Announcement[]>(mockAnnouncements);
   const [title, setTitle] = useState("");
-  const [target, setTarget] = useState<"all" | UserRole>("all");
+  // "all" = everyone, "franchisees" = all franchisees, or a franchisee id = that one only.
+  const [target, setTarget] = useState<string>("all");
+  const targetLabel =
+    target === "all" ? "All users"
+    : target === "franchisees" ? "All franchisees"
+    : mockFranchisees.find((f) => f.id === target)?.business_name ?? "Custom";
   const [schedule, setSchedule] = useState("");
   const [preview, setPreview] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -44,8 +49,9 @@ export default function AdminAnnouncementsPage() {
       body,
       pinned: false,
       publish_at: schedule ? new Date(schedule).toISOString() : new Date().toISOString(),
-      target_role: target === "all" ? null : (target as UserRole),
-    };
+      target_role: target === "all" || target === "franchisees" ? (target === "franchisees" ? "franchisee" : null) : "franchisee",
+      target_label: targetLabel,
+    } as Announcement & { target_label?: string };
     setList([a, ...list]);
     setTitle("");
     if (bodyRef.current) bodyRef.current.innerHTML = "";
@@ -90,13 +96,16 @@ export default function AdminAnnouncementsPage() {
                 <span className="text-[12px] font-medium text-[color:var(--color-ink-soft)]">Target audience</span>
                 <select
                   value={target}
-                  onChange={(e) => setTarget(e.target.value as "all" | UserRole)}
+                  onChange={(e) => setTarget(e.target.value)}
                   className="mt-1 w-full rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2"
                 >
-                  <option value="all">All users</option>
-                  <option value="franchisee">Franchisees</option>
-                  <option value="regional_manager">Regional managers</option>
-                  <option value="admin">Admins</option>
+                  <option value="all">All users (franchisees + HQ)</option>
+                  <option value="franchisees">All franchisees</option>
+                  <optgroup label="Specific franchisee">
+                    {mockFranchisees.map((f) => (
+                      <option key={f.id} value={f.id}>{f.business_name} · {f.owner_name}</option>
+                    ))}
+                  </optgroup>
                 </select>
               </label>
               <label>
@@ -137,7 +146,7 @@ export default function AdminAnnouncementsPage() {
                   <div>
                     <div className="text-sm font-semibold">{a.title}</div>
                     <div className="text-[11px] text-[color:var(--color-ink-soft)]">
-                      {formatDate(a.publish_at)} · {a.target_role ?? "all"}
+                      {formatDate(a.publish_at)} · {(a as Announcement & { target_label?: string }).target_label ?? (a.target_role ?? "all")}
                     </div>
                   </div>
                   <Pill tone="brand">{openRate(a.id)}% opened</Pill>
