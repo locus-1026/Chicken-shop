@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { notFound, useParams } from "next/navigation";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
 import { BackButton } from "@/components/ui/BackButton";
+import { ActionModal, type ActionKind } from "@/components/ui/ActionModal";
+import { useToast } from "@/components/ui/Toast";
 import { Sparkline } from "@/components/charts/Sparkline";
 import {
   mockAudits,
@@ -55,6 +57,8 @@ function trainingPctForOutlet(outletId: string) {
 
 export default function OutletDetailPage() {
   const params = useParams<{ code: string }>();
+  const toast = useToast();
+  const [action, setAction] = useState<ActionKind | null>(null);
   const outlet = mockOutlets.find((o) => o.outlet_code === params.code);
   if (!outlet) return notFound();
 
@@ -130,11 +134,21 @@ export default function OutletDetailPage() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm"><Phone size={12} /> {franchisee.contact}</Button>
-            <Button variant="outline" size="sm"><Mail size={12} /> Email</Button>
-            <Button size="sm"><PhoneCall size={12} /> Schedule coaching</Button>
+            <a href={`tel:${franchisee.contact.replace(/\s+/g, "")}`}>
+              <Button variant="outline" size="sm"><Phone size={12} /> {franchisee.contact}</Button>
+            </a>
+            {franchisee.email && (
+              <a href={`mailto:${franchisee.email}?subject=${encodeURIComponent(`${outlet.outlet_code} — follow-up from HQ`)}`}>
+                <Button variant="outline" size="sm"><Mail size={12} /> Email</Button>
+              </a>
+            )}
+            <Button size="sm" onClick={() => setAction("coach")}>
+              <PhoneCall size={12} /> Schedule coaching
+            </Button>
             {tone === "danger" && (
-              <Button variant="outline" size="sm"><FileWarning size={12} /> Issue notice</Button>
+              <Button variant="outline" size="sm" onClick={() => setAction("notice")}>
+                <FileWarning size={12} /> Issue notice
+              </Button>
             )}
           </div>
         </div>
@@ -355,6 +369,19 @@ export default function OutletDetailPage() {
       <div className="flex justify-center pt-2">
         <BackButton label="Back to previous page" fallbackHref="/admin/dashboard" />
       </div>
+
+      {action && (
+        <ActionModal
+          subjectCode={outlet.outlet_code}
+          ownerName={franchisee.owner_name}
+          kind={action}
+          onClose={() => setAction(null)}
+          onConfirm={(summary) => {
+            setAction(null);
+            toast("success", summary);
+          }}
+        />
+      )}
     </div>
   );
 }
