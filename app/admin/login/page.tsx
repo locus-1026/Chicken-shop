@@ -142,8 +142,8 @@ export default function AdminLoginPage() {
             </button>
             {showDemo && (
               <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-[12px] text-white/75 space-y-1">
-                <div><b>admin@cocochick.com.my</b> <span className="font-mono">coco2024</span></div>
-                <div><b>chan@cocochick.com.my</b> <span className="font-mono">coco2024</span></div>
+                <div><b>admin@cocochick.com.my</b> · <span className="font-mono">coco123</span></div>
+                <div><b>chan@cocochick.com.my</b> · <span className="font-mono">ceo2021</span></div>
               </div>
             )}
           </div>

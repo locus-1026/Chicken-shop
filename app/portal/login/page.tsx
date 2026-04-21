@@ -10,10 +10,10 @@ import { useAuth } from "@/lib/auth";
 import { ArrowLeft, Lock, Mail, Store, Eye, EyeOff } from "lucide-react";
 
 const demoAccounts = [
-  { email: "lim@cocochick.my",    owner: "Lim Chee Keong", outlet: "CC-001 · PJ" },
-  { email: "priya@cocochick.my",  owner: "Priya Nair",     outlet: "CC-002 / CC-003" },
-  { email: "fadzli@cocochick.my", owner: "Ahmad Fadzli",   outlet: "CC-004 · JB" },
-  { email: "kevin@cocochick.my",  owner: "Kevin Ooi",      outlet: "CC-005 · Kuching" },
+  { email: "lim@cocochick.my",    owner: "Lim Chee Keong", outlet: "CC-001 · PJ",        password: "coco1001" },
+  { email: "priya@cocochick.my",  owner: "Priya Nair",     outlet: "CC-002 / CC-003",    password: "coco1002" },
+  { email: "fadzli@cocochick.my", owner: "Ahmad Fadzli",   outlet: "CC-004 · JB",        password: "coco1004" },
+  { email: "kevin@cocochick.my",  owner: "Kevin Ooi",      outlet: "CC-005 · Kuching",   password: "coco1005" },
 ];
 
 export default function LoginPage() {
@@ -128,16 +128,18 @@ export default function LoginPage() {
 
             {showDemo && (
               <div className="rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-brand-50)] px-3 py-2.5 text-[12px]">
-                <div className="mb-2 font-semibold text-[color:var(--color-brand-700)]">Password for all: <span className="font-mono">coco2024</span></div>
+                <div className="mb-2 font-semibold text-[color:var(--color-brand-700)]">Click any row to fill</div>
                 <ul className="space-y-1">
                   {demoAccounts.map((a) => (
                     <li key={a.email}>
                       <button
-                        onClick={() => { setEmail(a.email); setPassword("coco2024"); }}
+                        onClick={() => { setEmail(a.email); setPassword(a.password); }}
                         className="w-full text-left rounded-lg px-2 py-1 hover:bg-white"
                       >
-                        <span className="font-mono">{a.email}</span>
-                        <span className="text-[color:var(--color-ink-soft)]"> — {a.owner} ({a.outlet})</span>
+                        <div className="font-mono">{a.email}</div>
+                        <div className="text-[11px] text-[color:var(--color-ink-soft)]">
+                          {a.owner} · {a.outlet} · pwd <b className="font-mono">{a.password}</b>
+                        </div>
                       </button>
                     </li>
                   ))}
