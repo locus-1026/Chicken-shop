@@ -262,7 +262,8 @@ begin
    and s.report_date < period_start + interval '1 month'
   group by o.id
   on conflict (outlet_id, billing_period) do nothing;
-end $$;
+end;
+$$;
 
 -- Risk flag trigger
 create or replace function public.check_audit_risk()
@@ -279,7 +280,8 @@ begin
     where id = (select franchisee_id from public.outlets where id = new.outlet_id);
   end if;
   return new;
-end $$;
+end;
+$$;
 
 create trigger trg_audit_risk
 after insert on public.compliance_audits
