@@ -10,7 +10,51 @@ import { fireConfetti } from "@/components/ui/Confetti";
 import { useToast } from "@/components/ui/Toast";
 import { mockTrainingModules, mockTrainingProgress } from "@/lib/mock-data";
 import type { TrainingModule } from "@/lib/types";
-import { PlayCircle, FileText } from "lucide-react";
+import { PlayCircle, FileText, ArrowLeft } from "lucide-react";
+
+// Module-specific quizzes. Each ties to the module id so staff get relevant
+// questions — same inputs always give the same questions.
+type Question = { q: string; options: string[]; correct: number };
+const quizzesByModule: Record<string, Question[]> = {
+  "t-1": [
+    { q: "What's the target core temperature for poached chicken before serving?", options: ["55°C", "72°C", "85°C"], correct: 1 },
+    { q: "How long should the chicken rest in the ice bath after poaching?", options: ["30 seconds", "5–7 minutes", "30 minutes"], correct: 1 },
+    { q: "Which rice-to-stock ratio do we use for the signature rice?", options: ["1:1", "1:1.2", "1:2"], correct: 1 },
+    { q: "The signature chilli sauce is finished with which ingredient?", options: ["Calamansi juice", "Tomato ketchup", "Soy sauce"], correct: 0 },
+    { q: "Ginger-scallion oil should be made fresh every:", options: ["Shift", "3 days", "Week"], correct: 0 },
+  ],
+  "t-2": [
+    { q: "Danger zone for food temperature is:", options: ["0–4°C", "5–60°C", "65–90°C"], correct: 1 },
+    { q: "How often must the chopping board used for raw chicken be sanitised?", options: ["Between each protein switch", "Once per shift", "End of day only"], correct: 0 },
+    { q: "Minimum hand-wash duration under MOH guidelines?", options: ["5 seconds", "20 seconds", "60 seconds"], correct: 1 },
+    { q: "Cooked food left at room temperature must be discarded after:", options: ["1 hour", "4 hours", "8 hours"], correct: 1 },
+    { q: "Who needs a valid typhoid vaccination record?", options: ["Only the manager", "Every food handler", "Only new hires"], correct: 1 },
+  ],
+  "t-3": [
+    { q: "Which shortcut opens the daily Z-report on the POS?", options: ["F2", "Ctrl + Z", "Shift + R"], correct: 2 },
+    { q: "A discount above 15% requires:", options: ["No approval", "Manager PIN override", "A written note"], correct: 1 },
+    { q: "If the payment terminal is offline, the correct fallback is:", options: ["Refuse the order", "Manual tap-and-go on phone", "Record the sale and take cash"], correct: 2 },
+    { q: "Where do you void a transaction after it's been closed?", options: ["You can't — process a refund instead", "Settings → Transactions", "By deleting the receipt"], correct: 0 },
+    { q: "End-of-day sales are auto-synced to HQ at:", options: ["Every hour", "11:59 PM daily", "Only when you tap Sync"], correct: 1 },
+  ],
+  "t-4": [
+    { q: "First step of the LAST recovery framework is:", options: ["Listen", "Apologise", "Solve"], correct: 0 },
+    { q: "A customer finds hair in their rice. You should:", options: ["Offer a discount on the next visit", "Replace the meal + comp a drink + log an incident", "Ask them to finish the meal first"], correct: 1 },
+    { q: "Refunds above RM 50 require:", options: ["No approval", "Shift manager approval", "HQ approval via ticket"], correct: 1 },
+    { q: "What do we NEVER say to an angry customer?", options: ["\"I understand\"", "\"That's our policy\"", "\"Let me find out for you\""], correct: 1 },
+    { q: "After any serious complaint, you must log it in:", options: ["The cashier notebook", "The Support tab of the portal", "WhatsApp group only"], correct: 1 },
+  ],
+  "t-5": [
+    { q: "The approved brand orange is:", options: ["#FF6B00", "#E8590C", "#C94A05"], correct: 1 },
+    { q: "Staff uniforms must be worn with:", options: ["Any closed-toe shoes", "Black non-slip shoes only", "Whatever is comfortable"], correct: 1 },
+    { q: "The outdoor A-frame must be displayed:", options: ["Within 1m of the entrance", "Wherever there's space", "Only on weekends"], correct: 0 },
+    { q: "Menu boards must be refreshed when a price changes, within:", options: ["24 hours", "7 days", "End of the month"], correct: 0 },
+    { q: "Customer-facing counters must be wiped every:", options: ["15 minutes during peak", "Once per shift", "End of day"], correct: 0 },
+  ],
+};
+function quizFor(moduleId: string): Question[] {
+  return quizzesByModule[moduleId] ?? quizzesByModule["t-1"];
+}
 
 export default function TrainingPage() {
   const [progress, setProgress] = useState(mockTrainingProgress);
@@ -111,11 +155,7 @@ function LearningModal({
   const toast = useToast();
   const [step, setStep] = useState<"content" | "quiz" | "result">("content");
   const [answers, setAnswers] = useState<(number | undefined)[]>([]);
-  const quiz = [
-    { q: "What is the correct holding temperature for the chicken?", options: ["60°C", "75°C", "90°C"], correct: 1 },
-    { q: "How often should the chopping board be sanitised?", options: ["Every shift", "Once a week", "Only when dirty"], correct: 0 },
-    { q: `The passing score for this module is ${module.passing_score}%. True?`, options: ["True", "False"], correct: 0 },
-  ];
+  const quiz = quizFor(module.id);
 
   const allAnswered = quiz.every((_, i) => typeof answers[i] === "number");
 
@@ -136,10 +176,20 @@ function LearningModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--color-ink)]/60 p-4">
       <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-[20px] bg-white shadow-2xl">
         <div className="flex items-start justify-between border-b border-[color:var(--color-border)] p-5">
-          <div>
-            <Pill tone="brand">{module.category}</Pill>
-            <h2 className="mt-2 text-xl font-semibold">{module.title}</h2>
-            <p className="text-[13px] text-[color:var(--color-ink-soft)]">{module.description}</p>
+          <div className="flex items-start gap-3">
+            <button
+              onClick={() => (step === "content" ? onClose() : setStep(step === "result" ? "quiz" : "content"))}
+              className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[color:var(--color-border)] bg-white text-[color:var(--color-ink-soft)] hover:border-[color:var(--color-brand)] hover:text-[color:var(--color-brand-700)]"
+              aria-label={step === "content" ? "Back to modules" : "Back a step"}
+              title={step === "content" ? "Back to modules" : "Back"}
+            >
+              <ArrowLeft size={16} />
+            </button>
+            <div>
+              <Pill tone="brand">{module.category}</Pill>
+              <h2 className="mt-2 text-xl font-semibold">{module.title}</h2>
+              <p className="text-[13px] text-[color:var(--color-ink-soft)]">{module.description}</p>
+            </div>
           </div>
           <Button variant="ghost" onClick={onClose}>Close</Button>
         </div>
