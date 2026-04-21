@@ -7,14 +7,35 @@ import { Pill } from "@/components/ui/Pill";
 import { mockAnnouncements, mockFranchisees } from "@/lib/mock-data";
 import { formatDate } from "@/lib/utils";
 import type { Announcement } from "@/lib/types";
-import { Send, Eye } from "lucide-react";
+import { Send, Eye, X, Check, Clock, Mail } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
 
-// Stable per-announcement open-rate (simple hash → 55..95%).
-function openRate(id: string) {
+// Deterministic hash → integer.
+function hash(s: string) {
   let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
-  return 55 + (Math.abs(h) % 40);
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+// Deterministic per-announcement x franchisee read status.
+// Same inputs → same output, so refreshing doesn't scramble the numbers.
+function hasOpened(announcementId: string, franchiseeId: string) {
+  return hash(announcementId + ":" + franchiseeId) % 4 !== 0; // ~75% opened
+}
+function openedAt(announcementId: string, franchiseeId: string, publishAt: string) {
+  const base = new Date(publishAt).getTime();
+  const hoursLater = (hash(announcementId + franchiseeId) % 48) + 1;
+  return new Date(base + hoursLater * 3600_000).toISOString();
+}
+function recipientsFor(target_role: string | null, targetLabel?: string) {
+  // For "All franchisees" or a specific franchisee, we only list franchisees.
+  // For "All users" we'd include HQ too, but since there's no HQ-side inbox yet,
+  // we still list franchisees (HQ always sees everything in the admin console).
+  if (targetLabel && targetLabel !== "All users" && targetLabel !== "All franchisees") {
+    const picked = mockFranchisees.find((f) => f.business_name === targetLabel);
+    return picked ? [picked] : mockFranchisees;
+  }
+  return mockFranchisees;
 }
 
 export default function AdminAnnouncementsPage() {
@@ -29,6 +50,7 @@ export default function AdminAnnouncementsPage() {
     : mockFranchisees.find((f) => f.id === target)?.business_name ?? "Custom";
   const [schedule, setSchedule] = useState("");
   const [preview, setPreview] = useState(false);
+  const [openedAnnouncement, setOpenedAnnouncement] = useState<Announcement | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
 
   const exec = (cmd: string) => document.execCommand(cmd, false);
@@ -138,23 +160,152 @@ export default function AdminAnnouncementsPage() {
 
         <Card className="lg:col-span-2">
           <CardTitle>Sent history</CardTitle>
-          <CardSubtitle>Mock open-rate tracking.</CardSubtitle>
+          <CardSubtitle>Click a row to see who's opened it.</CardSubtitle>
           <ul className="mt-3 space-y-2">
-            {list.map((a) => (
-              <li key={a.id} className="rounded-xl border border-[color:var(--color-border)] bg-white p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold">{a.title}</div>
-                    <div className="text-[11px] text-[color:var(--color-ink-soft)]">
-                      {formatDate(a.publish_at)} · {(a as Announcement & { target_label?: string }).target_label ?? (a.target_role ?? "all")}
+            {list.map((a) => {
+              const label = (a as Announcement & { target_label?: string }).target_label ?? (a.target_role ?? "all");
+              const recipients = recipientsFor(a.target_role, label);
+              const openedCount = recipients.filter((f) => hasOpened(a.id, f.id)).length;
+              const pct = recipients.length ? Math.round((openedCount / recipients.length) * 100) : 0;
+              return (
+                <li key={a.id}>
+                  <button
+                    onClick={() => setOpenedAnnouncement(a)}
+                    className="flex w-full items-center justify-between gap-3 rounded-xl border border-[color:var(--color-border)] bg-white p-3 text-left transition-all hover:-translate-y-0.5 hover:border-[color:var(--color-brand-200)] hover:shadow-[0_12px_28px_-14px_rgba(45,26,14,0.18)]"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold">{a.title}</div>
+                      <div className="text-[11px] text-[color:var(--color-ink-soft)]">
+                        {formatDate(a.publish_at)} · {label} · {openedCount}/{recipients.length} opened
+                      </div>
                     </div>
-                  </div>
-                  <Pill tone="brand">{openRate(a.id)}% opened</Pill>
-                </div>
-              </li>
-            ))}
+                    <Pill tone={pct >= 75 ? "success" : pct >= 40 ? "warning" : "danger"}>{pct}%</Pill>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </Card>
+      </div>
+
+      {openedAnnouncement && (
+        <ReadReceiptsModal
+          announcement={openedAnnouncement}
+          onClose={() => setOpenedAnnouncement(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ReadReceiptsModal({
+  announcement,
+  onClose,
+}: {
+  announcement: Announcement;
+  onClose: () => void;
+}) {
+  const label = (announcement as Announcement & { target_label?: string }).target_label
+    ?? (announcement.target_role ?? "all");
+  const recipients = recipientsFor(announcement.target_role, label);
+  const openedList = recipients.filter((f) => hasOpened(announcement.id, f.id));
+  const pendingList = recipients.filter((f) => !hasOpened(announcement.id, f.id));
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-lg overflow-hidden rounded-[20px] border border-[color:var(--color-border)] bg-white shadow-xl"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-[color:var(--color-border)] p-5">
+          <div className="min-w-0">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-[color:var(--color-brand-700)]">Read receipts</div>
+            <h3 className="mt-0.5 truncate text-lg font-semibold">{announcement.title}</h3>
+            <div className="mt-0.5 text-[12px] text-[color:var(--color-ink-soft)]">
+              Sent {formatDate(announcement.publish_at)} · Target: {label}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-full p-1.5 text-[color:var(--color-ink-soft)] hover:bg-[color:var(--color-brand-50)] hover:text-[color:var(--color-brand-700)]"
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-0 border-b border-[color:var(--color-border)]">
+          <div className="p-4 text-center">
+            <div className="text-[11px] font-medium uppercase tracking-wider text-[color:var(--color-ink-soft)]">Opened</div>
+            <div className="mt-1 text-2xl font-semibold text-[color:var(--color-success)]">{openedList.length}</div>
+          </div>
+          <div className="border-l border-[color:var(--color-border)] p-4 text-center">
+            <div className="text-[11px] font-medium uppercase tracking-wider text-[color:var(--color-ink-soft)]">Not yet</div>
+            <div className="mt-1 text-2xl font-semibold text-[color:var(--color-warning)]">{pendingList.length}</div>
+          </div>
+        </div>
+
+        <div className="max-h-[50vh] overflow-y-auto p-4">
+          {openedList.length > 0 && (
+            <>
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[color:var(--color-ink-soft)]">
+                Opened
+              </div>
+              <ul className="space-y-1.5">
+                {openedList.map((f) => (
+                  <li
+                    key={f.id}
+                    className="flex items-center justify-between rounded-lg bg-[color:var(--color-success-soft)]/60 px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium">{f.business_name}</div>
+                      <div className="truncate text-[11px] text-[color:var(--color-ink-soft)]">{f.owner_name}</div>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[11px] font-medium text-[color:var(--color-success)]">
+                      <Check size={12} />
+                      {formatDate(openedAt(announcement.id, f.id, announcement.publish_at))}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
+          {pendingList.length > 0 && (
+            <>
+              <div className="mt-4 mb-2 text-[11px] font-semibold uppercase tracking-wider text-[color:var(--color-ink-soft)]">
+                Not yet opened
+              </div>
+              <ul className="space-y-1.5">
+                {pendingList.map((f) => (
+                  <li
+                    key={f.id}
+                    className="flex items-center justify-between rounded-lg bg-[color:var(--color-warning-soft)]/60 px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium">{f.business_name}</div>
+                      <div className="truncate text-[11px] text-[color:var(--color-ink-soft)]">{f.owner_name}</div>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[11px] font-medium text-[color:var(--color-warning)]">
+                      <Clock size={12} /> pending
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+
+        {pendingList.length > 0 && (
+          <div className="border-t border-[color:var(--color-border)] bg-[color:var(--color-background)] p-4">
+            <Button variant="outline" size="sm" className="w-full" onClick={onClose}>
+              <Mail size={14} /> Nudge {pendingList.length} franchisee{pendingList.length > 1 ? "s" : ""}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
