@@ -1,14 +1,15 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
-import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { mockFranchisees, mockOutlets } from "@/lib/mock-data";
 import { useToast } from "@/components/ui/Toast";
 import { daysUntil, formatDate } from "@/lib/utils";
 import type { Franchisee } from "@/lib/types";
-import { Download, Pencil } from "lucide-react";
+import { Download, Pencil, ChevronRight } from "lucide-react";
 
 export default function FranchiseesPage() {
   const toast = useToast();
@@ -81,10 +82,15 @@ export default function FranchiseesPage() {
                         className="w-full rounded-lg border border-[color:var(--color-border)] px-2 py-1"
                       />
                     ) : (
-                      <>
-                        <div className="font-medium">{f.business_name}</div>
-                        <div className="text-[11px] text-[color:var(--color-ink-soft)]">IC {f.ic_number}</div>
-                      </>
+                      <Link href={`/admin/franchisees/${f.id}`} className="group inline-flex items-start gap-1.5">
+                        <div>
+                          <div className="font-medium text-[color:var(--color-ink)] group-hover:text-[color:var(--color-brand-700)] group-hover:underline">
+                            {f.business_name}
+                          </div>
+                          <div className="text-[11px] text-[color:var(--color-ink-soft)]">IC {f.ic_number}</div>
+                        </div>
+                        <ChevronRight size={12} className="mt-1 text-[color:var(--color-ink-soft)] group-hover:text-[color:var(--color-brand-700)]" />
+                      </Link>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -104,7 +110,9 @@ export default function FranchiseesPage() {
                   <td className="px-4 py-3">
                     {outlets.map((o) => (
                       <div key={o.id} className="text-[12px]">
-                        <span className="font-medium">{o.outlet_code}</span> · {o.state}
+                        <Link href={`/admin/outlets/${o.outlet_code}`} className="font-medium text-[color:var(--color-brand-700)] hover:underline">
+                          {o.outlet_code}
+                        </Link> · {o.state}
                       </div>
                     ))}
                   </td>

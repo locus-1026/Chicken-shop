@@ -124,7 +124,10 @@ export default function OutletDetailPage() {
             <h1 className="mt-1 text-2xl font-bold">{outlet.outlet_code}</h1>
             <div className="mt-0.5 text-[14px] text-[color:var(--color-ink)]">{outlet.location}</div>
             <div className="mt-1 text-[13px] text-[color:var(--color-ink-soft)]">
-              {franchisee.business_name} · Owner <b className="text-[color:var(--color-ink)]">{franchisee.owner_name}</b>
+              <Link href={`/admin/franchisees/${franchisee.id}`} className="font-medium text-[color:var(--color-brand-700)] hover:underline">
+                {franchisee.business_name}
+              </Link>
+              {" · "}Owner <b className="text-[color:var(--color-ink)]">{franchisee.owner_name}</b>
               {franchisee.risk_flag && <Pill tone="danger" className="ml-2">At-risk flag</Pill>}
             </div>
             <div className="mt-1 text-[12px] text-[color:var(--color-ink-soft)]">
@@ -144,23 +147,27 @@ export default function OutletDetailPage() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi
+          href="/admin/royalties"
           label="Month sales"
           value={RM(outlet.monthly_actual)}
           sub={`${pct}% of ${RM(outlet.monthly_target)} target`}
           tone={pct >= 90 ? "success" : pct >= 70 ? "warning" : "danger"}
         />
         <Kpi
+          href="/admin/royalties"
           label="Avg ticket"
           value={RM(Math.round(avgTicket))}
           sub={`${monthTxn.toLocaleString()} transactions this month`}
         />
         <Kpi
+          href="/admin/audits"
           label="Latest audit"
           value={latestAudit ? `${latestAudit.score}/100` : "—"}
           sub={latestAudit ? `${formatDate(latestAudit.audit_date)} · ${latestAudit.auditor}` : "No audit yet"}
           tone={latestAudit ? (latestAudit.score >= 85 ? "success" : latestAudit.score >= 70 ? "warning" : "danger") : undefined}
         />
         <Kpi
+          href="/admin/training"
           label="Training complete"
           value={`${trainingPct}%`}
           sub={`${Math.round((trainingPct / 100) * mockTrainingModules.length)}/${mockTrainingModules.length} modules passed`}
@@ -202,7 +209,8 @@ export default function OutletDetailPage() {
           </div>
         </Card>
 
-        <Card>
+        <Link href="/admin/royalties" className="block">
+        <Card className="h-full transition-all hover:-translate-y-0.5 hover:border-[color:var(--color-brand-200)] hover:shadow-[0_12px_28px_-14px_rgba(45,26,14,0.25)] cursor-pointer">
           <CardTitle>Royalty status</CardTitle>
           <CardSubtitle>Most recent 3 statements.</CardSubtitle>
           <ul className="mt-3 space-y-2">
@@ -225,17 +233,23 @@ export default function OutletDetailPage() {
             })}
           </ul>
           {latestRoyalty && (
-            <Link href="/admin/royalties" className="mt-3 inline-block text-[12px] font-medium text-[color:var(--color-brand-700)] hover:underline">
+            <span className="mt-3 inline-block text-[12px] font-medium text-[color:var(--color-brand-700)]">
               View all statements →
-            </Link>
+            </span>
           )}
         </Card>
+        </Link>
       </div>
 
       <Card className="overflow-x-auto p-0">
-        <div className="px-4 py-3">
-          <CardTitle>Audit history</CardTitle>
-          <CardSubtitle>HQ compliance visits.</CardSubtitle>
+        <div className="flex items-start justify-between gap-3 px-4 py-3">
+          <div>
+            <CardTitle>Audit history</CardTitle>
+            <CardSubtitle>HQ compliance visits.</CardSubtitle>
+          </div>
+          <Link href="/admin/audits" className="shrink-0 text-[12px] font-medium text-[color:var(--color-brand-700)] hover:underline">
+            View all audits →
+          </Link>
         </div>
         {audits.length === 0 ? (
           <div className="px-4 pb-4 text-sm text-[color:var(--color-ink-soft)]">No audits recorded yet for this outlet.</div>
@@ -316,9 +330,14 @@ export default function OutletDetailPage() {
       </Card>
 
       <Card className="overflow-x-auto p-0">
-        <div className="px-4 py-3">
-          <CardTitle>Recent daily sales</CardTitle>
-          <CardSubtitle>Last 10 days of reported revenue.</CardSubtitle>
+        <div className="flex items-start justify-between gap-3 px-4 py-3">
+          <div>
+            <CardTitle>Recent daily sales</CardTitle>
+            <CardSubtitle>Last 10 days of reported revenue.</CardSubtitle>
+          </div>
+          <Link href={`/admin/franchisees/${franchisee.id}`} className="shrink-0 text-[12px] font-medium text-[color:var(--color-brand-700)] hover:underline">
+            Owner summary →
+          </Link>
         </div>
         <table className="w-full text-sm">
           <thead className="bg-[color:var(--color-brand-50)] text-left text-[12px] uppercase tracking-wide text-[color:var(--color-brand-700)]">
@@ -346,8 +365,9 @@ export default function OutletDetailPage() {
 }
 
 function Kpi({
-  label, value, sub, tone,
+  href, label, value, sub, tone,
 }: {
+  href?: string;
   label: string;
   value: string;
   sub: string;
@@ -358,13 +378,14 @@ function Kpi({
     : tone === "warning" ? "text-[color:var(--color-warning)]"
     : tone === "danger" ? "text-[color:var(--color-danger)]"
     : "";
-  return (
-    <Card>
+  const card = (
+    <Card className={href ? "h-full transition-all hover:-translate-y-0.5 hover:border-[color:var(--color-brand-200)] hover:shadow-[0_12px_28px_-14px_rgba(45,26,14,0.25)] cursor-pointer" : ""}>
       <div className="text-[12px] font-medium text-[color:var(--color-ink-soft)]">{label}</div>
       <div className={"mt-2 text-[24px] font-semibold " + toneCls}>{value}</div>
       <div className="mt-1 text-[12px] text-[color:var(--color-ink-soft)]">{sub}</div>
     </Card>
   );
+  return href ? <Link href={href} className="block">{card}</Link> : card;
 }
 
 function MixStat({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
