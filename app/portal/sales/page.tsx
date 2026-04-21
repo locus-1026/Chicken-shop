@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { Sparkline } from "@/components/charts/Sparkline";
 import { fireConfetti } from "@/components/ui/Confetti";
-import { mockSalesReports } from "@/lib/mock-data";
+import { mockSalesReports, resolveMockOutletId } from "@/lib/mock-data";
 import { useCurrentOutlet } from "@/lib/current-outlet";
 import { useToast } from "@/components/ui/Toast";
 import { RM, formatDate } from "@/lib/utils";
@@ -24,8 +24,9 @@ function channelPill(mix: ChannelMix | undefined) {
 export default function SalesPage() {
   const { outlet } = useCurrentOutlet();
   const toast = useToast();
+  const mockOutletId = resolveMockOutletId(outlet);
   const [reports, setReports] = useState(
-    mockSalesReports.filter((s) => s.outlet_id === outlet.id).sort((a, b) => (a.report_date < b.report_date ? 1 : -1))
+    mockSalesReports.filter((s) => s.outlet_id === mockOutletId).sort((a, b) => (a.report_date < b.report_date ? 1 : -1))
   );
   const [gross, setGross] = useState("");
   const [transactions, setTransactions] = useState("");
@@ -38,10 +39,10 @@ export default function SalesPage() {
 
   useEffect(() => {
     setReports(
-      mockSalesReports.filter((s) => s.outlet_id === outlet.id).sort((a, b) => (a.report_date < b.report_date ? 1 : -1))
+      mockSalesReports.filter((s) => s.outlet_id === mockOutletId).sort((a, b) => (a.report_date < b.report_date ? 1 : -1))
     );
     setMessage(null);
-  }, [outlet.id]);
+  }, [mockOutletId]);
 
   const channelTotal = dineIn + takeaway + delivery;
 

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { useToast } from "@/components/ui/Toast";
 import { useCurrentOutlet } from "@/lib/current-outlet";
-import { mockSupplyOrders } from "@/lib/mock-data";
+import { mockSupplyOrders, resolveMockOutletId } from "@/lib/mock-data";
 import type { SupplyOrder } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
 import { Plus, Minus, ShoppingBasket, Package, ChevronDown, ChevronRight } from "lucide-react";
@@ -47,7 +47,7 @@ export default function SuppliesPage() {
   };
 
   const history = useMemo(() => {
-    const baseline = mockSupplyOrders.filter((o) => o.outlet_id === outlet.id);
+    const baseline = mockSupplyOrders.filter((o) => o.outlet_id === resolveMockOutletId(outlet));
     return [...locallyPlaced, ...baseline].sort(
       (a, b) => (a.submitted_at < b.submitted_at ? 1 : -1)
     );

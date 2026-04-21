@@ -171,6 +171,15 @@ export const DEMO_OUTLET_ID = "o-1";
 
 // Demo login PINs — one per outlet. Last 4 digits of outlet code.
 // In production these would be Supabase Auth passwords.
+// Bridge between real Supabase outlet ids (UUIDs) and the mock ids ("o-1" …)
+// used throughout the seeded mock datasets. Pass the signed-in outlet (which
+// has the real UUID + outlet_code) and you get back the mock id to filter with.
+// Falls back to the real id when nothing matches.
+export function resolveMockOutletId(outlet: { id: string; outlet_code: string }): string {
+  const match = mockOutlets.find((o) => o.outlet_code === outlet.outlet_code);
+  return match?.id ?? outlet.id;
+}
+
 export const outletPins: Record<string, string> = {
   "o-1": "1001",
   "o-2": "1002",

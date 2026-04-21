@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Pill } from "@/components/ui/Pill";
-import { mockAnnouncements, mockRoyalties } from "@/lib/mock-data";
+import { mockAnnouncements, mockRoyalties, resolveMockOutletId } from "@/lib/mock-data";
 import { useCurrentOutlet } from "@/lib/current-outlet";
 import { formatDate, RM2, daysUntil } from "@/lib/utils";
 import { Pin, Calendar, Megaphone } from "lucide-react";
@@ -16,11 +16,12 @@ export default function AnnouncementsPage() {
   // and the current marketing campaign. Replaces the old "Welcome forever" card
   // that was taking up space after every outlet had onboarded.
   const livePinned = useMemo(() => {
+    const mockOutletId = resolveMockOutletId(outlet);
     const nextRoyalty = mockRoyalties
-      .filter((r) => r.outlet_id === outlet.id && r.status !== "paid")
+      .filter((r) => r.outlet_id === mockOutletId && r.status !== "paid")
       .sort((a, b) => (a.due_date < b.due_date ? -1 : 1))[0];
     return nextRoyalty;
-  }, [outlet.id]);
+  }, [outlet]);
 
   // Hide the forever-pinned welcome; everything else still flows normally.
   const otherAnnouncements = mockAnnouncements

@@ -5,7 +5,7 @@ import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
 import { useCurrentOutlet } from "@/lib/current-outlet";
-import { mockRoyalties } from "@/lib/mock-data";
+import { mockRoyalties, resolveMockOutletId } from "@/lib/mock-data";
 import { useToast } from "@/components/ui/Toast";
 import { RM2, formatDate, monthLabel, daysUntil } from "@/lib/utils";
 import type { Royalty } from "@/lib/types";
@@ -36,11 +36,13 @@ export default function RoyaltyPage() {
     }
   };
 
+  const mockOutletId = resolveMockOutletId(outlet);
+
   const rows = useMemo(
     () => mockRoyalties
-      .filter((r) => r.outlet_id === outlet.id)
+      .filter((r) => r.outlet_id === mockOutletId)
       .sort((a, b) => (a.period < b.period ? 1 : -1)),
-    [outlet.id]
+    [mockOutletId]
   );
 
   const effectiveStatus = (r: Royalty): Status => {

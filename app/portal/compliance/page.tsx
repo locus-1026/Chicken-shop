@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
-import { mockAudits } from "@/lib/mock-data";
+import { mockAudits, resolveMockOutletId } from "@/lib/mock-data";
 import { useCurrentOutlet } from "@/lib/current-outlet";
 import { formatDate } from "@/lib/utils";
 import { Check, X } from "lucide-react";
@@ -22,9 +22,10 @@ export default function CompliancePage() {
     }
   };
 
+  const mockOutletId = resolveMockOutletId(outlet);
   const applyResolved = (resolved: Record<string, number[]>) =>
     mockAudits
-      .filter((a) => a.outlet_id === outlet.id)
+      .filter((a) => a.outlet_id === mockOutletId)
       .map((a) => {
         const idxs = resolved[a.id] ?? [];
         return {

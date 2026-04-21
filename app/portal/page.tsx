@@ -7,7 +7,7 @@ import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
 import { Stagger, StaggerItem } from "@/components/ui/Stagger";
 import { SalesDonut } from "@/components/charts/SalesDonut";
-import { mockRoyalties, mockAudits } from "@/lib/mock-data";
+import { mockRoyalties, mockAudits, resolveMockOutletId } from "@/lib/mock-data";
 import { useCurrentOutlet } from "@/lib/current-outlet";
 import { RM, RM2, daysUntil, formatDate } from "@/lib/utils";
 import { Receipt, GraduationCap, ShoppingBasket, LifeBuoy, AlertTriangle, Check, Clock, ArrowUpRight } from "lucide-react";
@@ -23,8 +23,9 @@ const baseTodos: ChecklistItem[] = [
 
 export default function PortalHome() {
   const { outlet, franchisee } = useCurrentOutlet();
+  const mockOutletId = resolveMockOutletId(outlet);
   const latestRoyalty = mockRoyalties
-    .filter((r) => r.outlet_id === outlet.id)
+    .filter((r) => r.outlet_id === mockOutletId)
     .sort((a, b) => (a.period < b.period ? 1 : -1))[0];
   const royaltyStatus = latestRoyalty
     ? latestRoyalty.status === "paid"
@@ -35,7 +36,7 @@ export default function PortalHome() {
     : "pending";
   const royalty = latestRoyalty;
   const lastAudit = mockAudits
-    .filter((a) => a.outlet_id === outlet.id)
+    .filter((a) => a.outlet_id === mockOutletId)
     .sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1))[0];
 
   // Per-outlet checklist state persisted to localStorage so ticks survive refreshes.
