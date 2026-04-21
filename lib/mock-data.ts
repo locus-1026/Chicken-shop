@@ -166,3 +166,13 @@ export const mockAnnouncements: Announcement[] = [
 // In the demo we pretend the current franchisee is Lim Chee Keong (CC-001).
 export const DEMO_FRANCHISEE_ID = "f-1";
 export const DEMO_OUTLET_ID = "o-1";
+
+// Demo login PINs — one per outlet. Last 4 digits of outlet code.
+// In production these would be Supabase Auth passwords.
+export const outletPins: Record<string, string> = {
+  "o-1": "1001",
+  "o-2": "1002",
+  "o-3": "1003",
+  "o-4": "1004",
+  "o-5": "1005",
+};
