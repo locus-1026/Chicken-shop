@@ -8,8 +8,17 @@ import { mockAnnouncements } from "@/lib/mock-data";
 import { formatDate } from "@/lib/utils";
 import type { Announcement, UserRole } from "@/lib/types";
 import { Send, Eye } from "lucide-react";
+import { useToast } from "@/components/ui/Toast";
+
+// Stable per-announcement open-rate (simple hash → 55..95%).
+function openRate(id: string) {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return 55 + (Math.abs(h) % 40);
+}
 
 export default function AdminAnnouncementsPage() {
+  const toast = useToast();
   const [list, setList] = useState<Announcement[]>(mockAnnouncements);
   const [title, setTitle] = useState("");
   const [target, setTarget] = useState<"all" | UserRole>("all");
@@ -21,7 +30,14 @@ export default function AdminAnnouncementsPage() {
 
   const publish = () => {
     const body = bodyRef.current?.innerHTML ?? "";
-    if (!title.trim() || !body.trim()) return;
+    if (!title.trim()) {
+      toast("error", "Please give the announcement a title.");
+      return;
+    }
+    if (!body.replace(/<[^>]+>/g, "").trim()) {
+      toast("error", "Please write the announcement body.");
+      return;
+    }
     const a: Announcement = {
       id: "an-new-" + Date.now(),
       title,
@@ -35,6 +51,7 @@ export default function AdminAnnouncementsPage() {
     if (bodyRef.current) bodyRef.current.innerHTML = "";
     setSchedule("");
     setPreview(false);
+    toast("success", `Announcement "${a.title}" queued.`);
   };
 
   return (
@@ -52,11 +69,14 @@ export default function AdminAnnouncementsPage() {
               className="w-full rounded-xl border border-[color:var(--color-border)] bg-white px-4 py-2.5 text-lg font-semibold"
             />
 
-            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[color:var(--color-border)] bg-white px-2 py-1">
-              <FormatBtn label="B" onClick={() => exec("bold")} />
-              <FormatBtn label="I" onClick={() => exec("italic")} />
-              <FormatBtn label="U" onClick={() => exec("underline")} />
-              <FormatBtn label="• List" onClick={() => exec("insertUnorderedList")} />
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[color:var(--color-border)] bg-white px-2 py-1">
+              <div className="flex items-center gap-1">
+                <FormatBtn label="B" onClick={() => exec("bold")} />
+                <FormatBtn label="I" onClick={() => exec("italic")} />
+                <FormatBtn label="U" onClick={() => exec("underline")} />
+                <FormatBtn label="• List" onClick={() => exec("insertUnorderedList")} />
+              </div>
+              <span className="pr-2 text-[11px] text-[color:var(--color-ink-soft)]">Select text first, then format.</span>
             </div>
             <div
               ref={bodyRef}
@@ -120,7 +140,7 @@ export default function AdminAnnouncementsPage() {
                       {formatDate(a.publish_at)} · {a.target_role ?? "all"}
                     </div>
                   </div>
-                  <Pill tone="brand">{50 + Math.floor(Math.random() * 45)}% opened</Pill>
+                  <Pill tone="brand">{openRate(a.id)}% opened</Pill>
                 </div>
               </li>
             ))}

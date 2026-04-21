@@ -8,9 +8,11 @@ import { mockOutlets, mockRoyalties, mockFranchisees } from "@/lib/mock-data";
 import { RM, RM2, monthLabel } from "@/lib/utils";
 import { calcRoyalty } from "@/lib/utils";
 import { notifyRoyaltyDue } from "@/lib/mocks/notifications";
+import { useToast } from "@/components/ui/Toast";
 import type { Royalty } from "@/lib/types";
 
 export default function AdminRoyaltiesPage() {
+  const toast = useToast();
   const periods = [...new Set(mockRoyalties.map((r) => r.period))].sort().reverse();
   const [period, setPeriod] = useState(periods[0]);
   const [rows, setRows] = useState<Royalty[]>(mockRoyalties);
@@ -24,9 +26,29 @@ export default function AdminRoyaltiesPage() {
 
   const markPaid = (id: string) => {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, status: "paid", paid_at: new Date().toISOString() } : r)));
+    toast("success", "Marked as paid.");
   };
 
-  const markAllPaid = () => {
+  const sendReminders = async () => {
+    const outstanding = filtered.filter((x) => x.status !== "paid");
+    if (outstanding.length === 0) {
+      toast("info", "No outstanding royalties for this month.");
+      return;
+    }
+    for (const r of outstanding) {
+      const outlet = mockOutlets.find((o) => o.id === r.outlet_id)!;
+      const f = mockFranchisees.find((x) => x.id === outlet.franchisee_id)!;
+      await notifyRoyaltyDue(outlet.outlet_code, f.email ?? "unknown@coco.my", r.royalty_amount + r.marketing_fee);
+    }
+    toast("success", `Sent ${outstanding.length} royalty reminders.`);
+  };
+
+  const markAllPaidWithToast = () => {
+    const count = filtered.filter((r) => r.status !== "paid").length;
+    if (count === 0) {
+      toast("info", "Every royalty for this period is already settled.");
+      return;
+    }
     setRows((prev) =>
       prev.map((r) =>
         r.period === period && r.status !== "paid"
@@ -34,15 +56,7 @@ export default function AdminRoyaltiesPage() {
           : r
       )
     );
-  };
-
-  const sendReminders = async () => {
-    for (const r of filtered.filter((x) => x.status !== "paid")) {
-      const outlet = mockOutlets.find((o) => o.id === r.outlet_id)!;
-      const f = mockFranchisees.find((x) => x.id === outlet.franchisee_id)!;
-      await notifyRoyaltyDue(outlet.outlet_code, f.email ?? "unknown@coco.my", r.royalty_amount + r.marketing_fee);
-    }
-    alert(`Sent ${filtered.filter((x) => x.status !== "paid").length} reminders (check console).`);
+    toast("success", `Marked ${count} royalties as paid.`);
   };
 
   const totals = filtered.reduce(
@@ -70,7 +84,7 @@ export default function AdminRoyaltiesPage() {
             {periods.map((p) => <option key={p} value={p}>{monthLabel(p)}</option>)}
           </select>
           <Button variant="outline" onClick={sendReminders}>Send reminders</Button>
-          <Button onClick={markAllPaid}>Mark all paid</Button>
+          <Button onClick={markAllPaidWithToast}>Mark all paid</Button>
         </div>
       </div>
 

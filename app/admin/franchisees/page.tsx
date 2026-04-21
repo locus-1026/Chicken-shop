@@ -5,11 +5,13 @@ import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { mockFranchisees, mockOutlets } from "@/lib/mock-data";
+import { useToast } from "@/components/ui/Toast";
 import { daysUntil, formatDate } from "@/lib/utils";
 import type { Franchisee } from "@/lib/types";
 import { Download, Pencil } from "lucide-react";
 
 export default function FranchiseesPage() {
+  const toast = useToast();
   const [list, setList] = useState<Franchisee[]>(mockFranchisees);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState<Partial<Franchisee>>({});
@@ -29,12 +31,16 @@ export default function FranchiseesPage() {
       ...list.map((f) => [f.business_name, f.owner_name, f.ic_number, f.contact, f.email ?? "", f.agreement_start, f.agreement_end, f.status]),
     ];
     const csv = rows.map((r) => r.map((c) => `"${(c ?? "").toString().replace(/"/g, '""')}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "franchisees.csv";
+    a.download = `franchisees-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast("success", `Exported ${list.length} franchisees to CSV.`);
   };
 
   return (

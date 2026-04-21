@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
 
@@ -94,18 +94,15 @@ export function Shell({
           })}
         </nav>
 
-        <AnimatePresence mode="wait">
-          <motion.main
-            key={pathname}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.28, ease: [0.2, 0.8, 0.2, 1] }}
-            className="flex-1 px-5 pb-24 pt-5 lg:px-10 lg:pb-10 lg:pt-8"
-          >
-            {children}
-          </motion.main>
-        </AnimatePresence>
+        <motion.main
+          key={pathname}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.24, ease: [0.2, 0.8, 0.2, 1] }}
+          className="flex-1 px-5 pb-24 pt-5 lg:px-10 lg:pb-10 lg:pt-8"
+        >
+          {children}
+        </motion.main>
       </div>
     </div>
   );

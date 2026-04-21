@@ -5,14 +5,32 @@ import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { Stagger, StaggerItem } from "@/components/ui/Stagger";
+import { useToast } from "@/components/ui/Toast";
 import { mockMarketingAssets } from "@/lib/mock-data";
+import type { MarketingAsset } from "@/lib/types";
 import { Download, FileType2 } from "lucide-react";
 
 const categories = ["All", "Seasonal Promotions", "Social Media", "Menu Boards", "In-Store POS"];
 
 export default function MarketingPage() {
+  const toast = useToast();
   const [cat, setCat] = useState("All");
   const assets = cat === "All" ? mockMarketingAssets : mockMarketingAssets.filter((a) => a.category === cat);
+
+  const download = (asset: MarketingAsset) => {
+    // Generate a simple placeholder file so the download actually does something.
+    const content = `Coco Chick — Marketing Asset\n\nTitle: ${asset.title}\nCategory: ${asset.category}\nFile type: ${asset.file_type}\n\n(In production this would be the real ${asset.file_type.toUpperCase()} from Supabase Storage.)\n`;
+    const blob = new Blob([content], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${asset.title.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}.${asset.file_type}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast("success", `Downloaded "${asset.title}".`);
+  };
 
   return (
     <div className="space-y-6">
@@ -47,7 +65,7 @@ export default function MarketingPage() {
               <CardTitle className="mt-2">{a.title}</CardTitle>
               <CardSubtitle>High-res, production-ready.</CardSubtitle>
               <div className="mt-4">
-                <Button variant="outline" className="w-full">
+                <Button variant="outline" className="w-full" onClick={() => download(a)}>
                   <Download size={16} /> Download
                 </Button>
               </div>

@@ -18,6 +18,10 @@ export default function AdminDashboard() {
     mockAudits.reduce((s, a) => s + a.score, 0) / mockAudits.length;
   const trainingCompletion = 62;
 
+  // Traffic-light rules:
+  //   🟢 green  = sales ≥ 90%  AND  audit ≥ 85  AND  no overdue royalty
+  //   🔴 red    = audit < 70  OR  overdue royalty
+  //   🟡 amber  = everything in between (incl. "no audit yet")
   const outletsWithStatus = mockOutlets.map((o) => {
     const f = mockFranchisees.find((x) => x.id === o.franchisee_id)!;
     const latest = mockAudits
@@ -27,9 +31,11 @@ export default function AdminDashboard() {
       .filter((r) => r.outlet_id === o.id)
       .sort((a, b) => (a.period < b.period ? 1 : -1))[0];
     const pct = (o.monthly_actual / o.monthly_target) * 100;
-    let tone: "success" | "warning" | "danger" = "success";
-    if (latestRoyalty?.status === "overdue" || (latest && latest.score < 70)) tone = "danger";
-    else if (pct < 80 || (latest && latest.score < 85)) tone = "warning";
+    const overdue = latestRoyalty?.status === "overdue";
+    let tone: "success" | "warning" | "danger";
+    if (overdue || (latest && latest.score < 70)) tone = "danger";
+    else if (pct >= 90 && latest && latest.score >= 85) tone = "success";
+    else tone = "warning";
     return { outlet: o, franchisee: f, audit: latest, royalty: latestRoyalty, pct, tone };
   });
 
@@ -54,7 +60,9 @@ export default function AdminDashboard() {
 
       <Card>
         <CardTitle>Outlet traffic lights</CardTitle>
-        <CardSubtitle>Green = on target + compliant. Amber = needs a look. Red = act now.</CardSubtitle>
+        <CardSubtitle>
+          Green = sales ≥ 90% <b>and</b> audit ≥ 85. Red = audit &lt; 70 or overdue royalty. Amber = anything in between.
+        </CardSubtitle>
         <Stagger className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {outletsWithStatus.map((x) => (
             <StaggerItem key={x.outlet.id}>

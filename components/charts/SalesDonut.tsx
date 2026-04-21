@@ -2,12 +2,13 @@
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 
 export function SalesDonut({ actual, target }: { actual: number; target: number }) {
-  const pct = Math.min(100, Math.round((actual / target) * 100));
+  const rawPct = Math.round((actual / target) * 100);
+  const visualPct = Math.min(100, rawPct);
   const data = [
-    { name: "achieved", value: pct },
-    { name: "remaining", value: 100 - pct },
+    { name: "achieved", value: visualPct },
+    { name: "remaining", value: 100 - visualPct },
   ];
-  const color = pct >= 100 ? "#3B6D11" : pct >= 80 ? "#E8590C" : "#A32D2D";
+  const color = rawPct >= 100 ? "#3B6D11" : rawPct >= 80 ? "#E8590C" : "#A32D2D";
 
   return (
     <div className="relative h-56">
@@ -28,8 +29,10 @@ export function SalesDonut({ actual, target }: { actual: number; target: number 
         </PieChart>
       </ResponsiveContainer>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-[42px] font-semibold leading-none" style={{ color }}>{pct}%</span>
-        <span className="mt-1 text-[12px] text-[color:var(--color-ink-soft)]">of monthly target</span>
+        <span className="text-[42px] font-semibold leading-none" style={{ color }}>{rawPct}%</span>
+        <span className="mt-1 text-[12px] text-[color:var(--color-ink-soft)]">
+          {rawPct >= 100 ? "target exceeded 🎉" : "of monthly target"}
+        </span>
       </div>
     </div>
   );

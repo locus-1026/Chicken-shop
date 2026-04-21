@@ -11,11 +11,15 @@ import {
   Megaphone,
   Image as ImageIcon,
   LifeBuoy,
+  ShoppingBasket,
+  Wallet,
 } from "lucide-react";
 
 const nav = [
   { href: "/portal",               label: "Home",       icon: <LayoutDashboard size={18} /> },
   { href: "/portal/sales",         label: "Sales",      icon: <Receipt size={18} /> },
+  { href: "/portal/royalty",       label: "Royalty",    icon: <Wallet size={18} /> },
+  { href: "/portal/supplies",      label: "Supplies",   icon: <ShoppingBasket size={18} /> },
   { href: "/portal/training",      label: "Training",   icon: <GraduationCap size={18} /> },
   { href: "/portal/compliance",    label: "Audits",     icon: <ShieldCheck size={18} /> },
   { href: "/portal/marketing",     label: "Marketing",  icon: <ImageIcon size={18} /> },

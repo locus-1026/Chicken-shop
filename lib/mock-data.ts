@@ -79,15 +79,17 @@ const monthKey = (offset: number) => {
   return d.toISOString().slice(0, 10);
 };
 
+// Deterministic multipliers so royalty totals are identical everywhere they're shown.
+const multipliers = [0.97, 1.03, 1.0] as const;
 export const mockRoyalties: Royalty[] = mockOutlets.flatMap((o) =>
   [3, 2, 1].map((back, idx) => {
-    const gross = o.monthly_actual * (0.9 + Math.random() * 0.15);
+    const gross = Math.round(o.monthly_actual * multipliers[idx]);
     const paid = back > 1;
     return {
       id: `r-${o.id}-${back}`,
       outlet_id: o.id,
       period: monthKey(back),
-      gross_sales: Math.round(gross),
+      gross_sales: gross,
       royalty_amount: Math.round(gross * 0.05),
       marketing_fee: Math.round(gross * 0.02),
       due_date: monthKey(back - 1),
@@ -97,17 +99,23 @@ export const mockRoyalties: Royalty[] = mockOutlets.flatMap((o) =>
   })
 );
 
-export const mockSalesReports: SalesReport[] = mockOutlets.flatMap((o) =>
+// Simple deterministic wiggle — same across reloads.
+const wiggle = (seed: number) => {
+  const x = Math.sin(seed) * 10000;
+  return x - Math.floor(x);
+};
+export const mockSalesReports: SalesReport[] = mockOutlets.flatMap((o, oi) =>
   Array.from({ length: 30 }, (_, i) => {
     const d = new Date();
     d.setDate(d.getDate() - i);
     const avg = o.monthly_target / 30;
+    const factor = 0.7 + wiggle(oi * 31 + i) * 0.6;
     return {
       id: `s-${o.id}-${i}`,
       outlet_id: o.id,
       report_date: d.toISOString().slice(0, 10),
-      gross_sales: Math.round(avg * (0.7 + Math.random() * 0.6)),
-      transactions: Math.round(80 + Math.random() * 60),
+      gross_sales: Math.round(avg * factor),
+      transactions: Math.round(80 + wiggle(oi * 7 + i) * 60),
       notes: null,
     };
   })

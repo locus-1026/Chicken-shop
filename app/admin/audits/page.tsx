@@ -4,7 +4,8 @@ import { useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
-import { mockAudits, mockOutlets, mockFranchisees } from "@/lib/mock-data";
+import { mockAudits, mockOutlets } from "@/lib/mock-data";
+import { useToast } from "@/components/ui/Toast";
 import { formatDate } from "@/lib/utils";
 import type { ComplianceAudit } from "@/lib/types";
 
@@ -17,16 +18,29 @@ const defaultChecklist = [
   "First-aid kit complete",
 ];
 
+const auditorOptions = [
+  "HQ Ops — Tan Wei Ming",
+  "HQ Ops — Mei Fong",
+  "HQ Ops — Raj Kumar",
+  "HQ Ops — Aisyah Abdullah",
+  "External — SGS Malaysia",
+];
+
 export default function AdminAuditsPage() {
+  const toast = useToast();
   const [audits, setAudits] = useState<ComplianceAudit[]>(mockAudits);
   const [show, setShow] = useState(false);
   const [outletId, setOutletId] = useState(mockOutlets[0].id);
   const [items, setItems] = useState(defaultChecklist.map((i) => ({ item: i, pass: true })));
-  const [auditor, setAuditor] = useState("HQ Ops — ");
+  const [auditor, setAuditor] = useState(auditorOptions[0]);
 
   const score = Math.round((items.filter((i) => i.pass).length / items.length) * 100);
 
   const save = () => {
+    if (!auditor || auditor.replace("HQ Ops —", "").trim().length < 2) {
+      toast("error", "Please pick an auditor.");
+      return;
+    }
     const newA: ComplianceAudit = {
       id: "a-new-" + Date.now(),
       outlet_id: outletId,
@@ -43,6 +57,9 @@ export default function AdminAuditsPage() {
     setAudits([newA, ...audits]);
     setShow(false);
     setItems(defaultChecklist.map((i) => ({ item: i, pass: true })));
+    toast(newA.risk_flag ? "error" : "success", newA.risk_flag
+      ? `Audit saved. Outlet flagged at risk — ${score}% after two sub-80 scores.`
+      : `Audit saved — score ${score}%.`);
   };
 
   const atRiskIds = new Set<string>();
@@ -125,7 +142,9 @@ export default function AdminAuditsPage() {
                 </label>
                 <label>
                   <span className="text-[12px] font-medium text-[color:var(--color-ink-soft)]">Auditor</span>
-                  <input value={auditor} onChange={(e) => setAuditor(e.target.value)} className="mt-1 w-full rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2" />
+                  <select value={auditor} onChange={(e) => setAuditor(e.target.value)} className="mt-1 w-full rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2">
+                    {auditorOptions.map((a) => <option key={a} value={a}>{a}</option>)}
+                  </select>
                 </label>
               </div>
               <div>

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { mockTickets } from "@/lib/mock-data";
 import { useCurrentOutlet } from "@/lib/current-outlet";
+import { useToast } from "@/components/ui/Toast";
 import { formatDate } from "@/lib/utils";
 import type { SupportTicket } from "@/lib/types";
 import { Paperclip } from "lucide-react";
@@ -14,11 +15,19 @@ const categories = ["IT / POS", "Supply Chain", "Marketing", "HR / Staffing", "F
 
 export default function SupportPage() {
   const { outlet } = useCurrentOutlet();
+  const toast = useToast();
   const [tickets, setTickets] = useState<SupportTicket[]>(mockTickets);
   const [form, setForm] = useState({ category: categories[0], subject: "", description: "" });
 
   const submit = () => {
-    if (!form.subject.trim() || !form.description.trim()) return;
+    if (!form.subject.trim()) {
+      toast("error", "Please add a short subject.");
+      return;
+    }
+    if (form.description.trim().length < 10) {
+      toast("error", "Please describe the issue in at least 10 characters.");
+      return;
+    }
     const t: SupportTicket = {
       id: "tk-new-" + Date.now(),
       outlet_id: outlet.id,
@@ -31,7 +40,10 @@ export default function SupportPage() {
     };
     setTickets([t, ...tickets]);
     setForm({ category: categories[0], subject: "", description: "" });
+    toast("success", "Ticket submitted. We'll respond within one business day.");
   };
+
+  const sortedTickets = [...tickets].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
 
   return (
     <div className="space-y-6">
@@ -103,7 +115,7 @@ export default function SupportPage() {
               </tr>
             </thead>
             <tbody>
-              {tickets.map((t) => (
+              {sortedTickets.map((t) => (
                 <tr key={t.id} className="border-t border-[color:var(--color-border)]">
                   <td className="py-2.5 pr-4">{formatDate(t.created_at)}</td>
                   <td className="py-2.5 pr-4">{t.category}</td>

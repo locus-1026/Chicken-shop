@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
@@ -8,13 +8,39 @@ import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGri
 import { mockTrainingModules } from "@/lib/mock-data";
 import type { TrainingModule } from "@/lib/types";
 import { UploadCloud } from "lucide-react";
+import { useToast } from "@/components/ui/Toast";
 
 export default function AdminTrainingPage() {
+  const toast = useToast();
   const [modules, setModules] = useState<TrainingModule[]>(mockTrainingModules);
   const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  // Synthetic completion stats
-  const stats = modules.map((m) => ({ name: m.title.slice(0, 18), completion: 30 + Math.round(Math.random() * 60) }));
+  // Stable synthetic completion stats (computed once per module set).
+  const stats = useMemo(
+    () =>
+      modules.map((m, idx) => ({
+        name: m.title.length > 18 ? m.title.slice(0, 17) + "…" : m.title,
+        completion: 35 + ((idx * 17 + m.title.length * 3) % 60),
+      })),
+    [modules]
+  );
+
+  const addFile = (name: string) => {
+    setModules((prev) => [
+      {
+        id: "t-new-" + Date.now(),
+        title: name.replace(/\.[^.]+$/, ""),
+        description: "Newly uploaded — edit metadata below.",
+        video_url: "#",
+        materials_url: null,
+        category: "Operations",
+        passing_score: 80,
+      },
+      ...prev,
+    ]);
+    toast("success", `Uploaded "${name}" as a new draft module.`);
+  };
 
   return (
     <div className="space-y-6">
@@ -32,26 +58,27 @@ export default function AdminTrainingPage() {
           onDrop={(e) => {
             e.preventDefault();
             setDragOver(false);
-            const name = e.dataTransfer.files[0]?.name ?? "New Module";
-            setModules((prev) => [
-              {
-                id: "t-new-" + Date.now(),
-                title: name.replace(/\.[^.]+$/, ""),
-                description: "Newly uploaded — edit metadata below.",
-                video_url: "#",
-                materials_url: null,
-                category: "Operations",
-                passing_score: 80,
-              },
-              ...prev,
-            ]);
+            addFile(e.dataTransfer.files[0]?.name ?? "New Module");
           }}
         >
           <div className="flex flex-col items-center py-8 text-center">
             <UploadCloud size={40} className="mb-3 text-[color:var(--color-brand)]" />
             <CardTitle>Drop a video or PDF</CardTitle>
             <CardSubtitle>Uploads to Supabase Storage (mocked). Drag & drop anywhere on this card.</CardSubtitle>
-            <Button variant="outline" className="mt-4">Browse files</Button>
+            <input
+              ref={fileRef}
+              type="file"
+              className="hidden"
+              accept=".mp4,.pdf,.mov,.zip"
+              onChange={(e) => {
+                const name = e.target.files?.[0]?.name;
+                if (name) addFile(name);
+                e.target.value = "";
+              }}
+            />
+            <Button variant="outline" className="mt-4" onClick={() => fileRef.current?.click()}>
+              Browse files
+            </Button>
           </div>
         </Card>
 

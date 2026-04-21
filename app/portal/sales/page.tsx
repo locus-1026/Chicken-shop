@@ -8,10 +8,12 @@ import { Sparkline } from "@/components/charts/Sparkline";
 import { fireConfetti } from "@/components/ui/Confetti";
 import { mockSalesReports } from "@/lib/mock-data";
 import { useCurrentOutlet } from "@/lib/current-outlet";
+import { useToast } from "@/components/ui/Toast";
 import { RM, formatDate } from "@/lib/utils";
 
 export default function SalesPage() {
   const { outlet } = useCurrentOutlet();
+  const toast = useToast();
   const [reports, setReports] = useState(
     mockSalesReports.filter((s) => s.outlet_id === outlet.id).sort((a, b) => (a.report_date < b.report_date ? 1 : -1))
   );
@@ -38,14 +40,22 @@ export default function SalesPage() {
 
   const submit = () => {
     const g = Number(gross);
-    if (!g) return;
+    const tx = Number(transactions);
+    if (!g || g <= 0) {
+      toast("error", "Please enter today's gross sales (RM).");
+      return;
+    }
+    if (!tx || tx <= 0) {
+      toast("error", "Please enter the number of transactions.");
+      return;
+    }
     const today = new Date().toISOString().slice(0, 10);
     const newReport = {
       id: "s-new-" + Date.now(),
       outlet_id: outlet.id,
       report_date: today,
       gross_sales: g,
-      transactions: Number(transactions) || 0,
+      transactions: tx,
       notes: null,
     };
     setReports([newReport, ...reports.filter((r) => r.report_date !== today)]);

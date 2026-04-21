@@ -7,6 +7,7 @@ import { Pill } from "@/components/ui/Pill";
 import { Stagger, StaggerItem } from "@/components/ui/Stagger";
 import { ProgressRing } from "@/components/charts/ProgressRing";
 import { fireConfetti } from "@/components/ui/Confetti";
+import { useToast } from "@/components/ui/Toast";
 import { mockTrainingModules, mockTrainingProgress } from "@/lib/mock-data";
 import type { TrainingModule } from "@/lib/types";
 import { PlayCircle, FileText } from "lucide-react";
@@ -107,15 +108,22 @@ function LearningModal({
   onClose: () => void;
   onPass: (score: number) => void;
 }) {
+  const toast = useToast();
   const [step, setStep] = useState<"content" | "quiz" | "result">("content");
-  const [answers, setAnswers] = useState<number[]>([]);
+  const [answers, setAnswers] = useState<(number | undefined)[]>([]);
   const quiz = [
     { q: "What is the correct holding temperature for the chicken?", options: ["60°C", "75°C", "90°C"], correct: 1 },
     { q: "How often should the chopping board be sanitised?", options: ["Every shift", "Once a week", "Only when dirty"], correct: 0 },
     { q: `The passing score for this module is ${module.passing_score}%. True?`, options: ["True", "False"], correct: 0 },
   ];
 
+  const allAnswered = quiz.every((_, i) => typeof answers[i] === "number");
+
   const submit = () => {
+    if (!allAnswered) {
+      toast("error", "Please answer every question before submitting.");
+      return;
+    }
     const correct = quiz.filter((q, i) => answers[i] === q.correct).length;
     const score = Math.round((correct / quiz.length) * 100);
     setStep("result");
@@ -197,7 +205,7 @@ function LearningModal({
         <div className="flex items-center justify-end gap-2 border-t border-[color:var(--color-border)] p-4">
           {step === "content" && <Button onClick={() => setStep("quiz")}>Start quiz →</Button>}
           {step === "quiz" && (
-            <Button onClick={submit} disabled={answers.length !== quiz.length}>
+            <Button onClick={submit} disabled={!allAnswered} className={allAnswered ? "" : "opacity-50 cursor-not-allowed"}>
               Submit answers
             </Button>
           )}
@@ -214,7 +222,7 @@ function Result({
   passing,
 }: {
   quiz: { q: string; options: string[]; correct: number }[];
-  answers: number[];
+  answers: (number | undefined)[];
   passing: number;
 }) {
   const correct = quiz.filter((q, i) => answers[i] === q.correct).length;

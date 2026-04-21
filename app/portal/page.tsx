@@ -13,9 +13,17 @@ import { Receipt, GraduationCap, ShoppingBasket, LifeBuoy, AlertTriangle, Check,
 
 export default function PortalHome() {
   const { outlet, franchisee } = useCurrentOutlet();
-  const royalty = mockRoyalties
+  const latestRoyalty = mockRoyalties
     .filter((r) => r.outlet_id === outlet.id)
     .sort((a, b) => (a.period < b.period ? 1 : -1))[0];
+  const royaltyStatus = latestRoyalty
+    ? latestRoyalty.status === "paid"
+      ? "paid"
+      : daysUntil(latestRoyalty.due_date) < 0
+      ? "overdue"
+      : latestRoyalty.status
+    : "pending";
+  const royalty = latestRoyalty;
   const lastAudit = mockAudits
     .filter((a) => a.outlet_id === outlet.id)
     .sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1))[0];
@@ -23,7 +31,7 @@ export default function PortalHome() {
   const todos = [
     { id: 1, label: "Submit today's sales report", done: false, overdue: false, href: "/portal/sales" },
     { id: 2, label: "Complete Food Safety SOP training", done: false, overdue: true, href: "/portal/training" },
-    { id: 3, label: "Settle April royalty", done: false, overdue: false, href: "#" },
+    { id: 3, label: "Settle April royalty", done: false, overdue: false, href: "/portal/royalty" },
     { id: 4, label: "Review Mother's Day marketing pack", done: true, overdue: false, href: "/portal/marketing" },
   ];
 
@@ -71,13 +79,16 @@ export default function PortalHome() {
                   Royalty {RM2(royalty.royalty_amount)} · Marketing {RM2(royalty.marketing_fee)}
                 </div>
               </div>
-              <Pill tone={royalty.status === "paid" ? "success" : royalty.status === "overdue" ? "danger" : "warning"}>
-                {royalty.status === "paid" ? <Check size={12} /> : <Clock size={12} />}
-                {royalty.status}
+              <Pill tone={royaltyStatus === "paid" ? "success" : royaltyStatus === "overdue" ? "danger" : "warning"}>
+                {royaltyStatus === "paid" ? <Check size={12} /> : <Clock size={12} />}
+                {royaltyStatus}
               </Pill>
             </div>
             <div className="mt-4 text-[12px] text-[color:var(--color-ink-soft)]">
-              Due {formatDate(royalty.due_date)} · {daysUntil(royalty.due_date)} days left
+              Due {formatDate(royalty.due_date)} ·{" "}
+              {daysUntil(royalty.due_date) >= 0
+                ? `${daysUntil(royalty.due_date)} days left`
+                : `${Math.abs(daysUntil(royalty.due_date))} days overdue`}
             </div>
           </Card>
         </StaggerItem>
@@ -172,7 +183,7 @@ export default function PortalHome() {
       <Stagger className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <QuickAction href="/portal/sales"     icon={<Receipt size={18} />}      label="Report Sales" />
         <QuickAction href="/portal/training"  icon={<GraduationCap size={18}/>} label="View Training" />
-        <QuickAction href="#"                 icon={<ShoppingBasket size={18}/>} label="Order Supplies" />
+        <QuickAction href="/portal/supplies"  icon={<ShoppingBasket size={18}/>} label="Order Supplies" />
         <QuickAction href="/portal/support"   icon={<LifeBuoy size={18} />}     label="Get Help" />
       </Stagger>
     </div>
