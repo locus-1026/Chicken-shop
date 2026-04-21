@@ -2,6 +2,12 @@
 
 create extension if not exists "pgcrypto";
 
+-- Re-grant Supabase defaults (needed after a `drop schema public cascade`).
+grant usage on schema public to anon, authenticated, service_role;
+alter default privileges in schema public grant all on tables    to anon, authenticated, service_role;
+alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
+alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
+
 -- Profiles map auth users to roles & linked franchisee
 create type user_role as enum ('franchisee', 'regional_manager', 'admin');
 
@@ -287,3 +293,8 @@ $$;
 create trigger trg_audit_risk
 after insert on public.compliance_audits
 for each row execute function public.check_audit_risk();
+
+-- Explicit grants on every table we just created (RLS still restricts rows).
+grant select, insert, update, delete on all tables in schema public to anon, authenticated, service_role;
+grant usage, select on all sequences in schema public to anon, authenticated, service_role;
+grant execute on all functions in schema public to anon, authenticated, service_role;
