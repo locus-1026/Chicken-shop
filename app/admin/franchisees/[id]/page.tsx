@@ -6,6 +6,7 @@ import { useMemo } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
+import { BackButton } from "@/components/ui/BackButton";
 import { Sparkline } from "@/components/charts/Sparkline";
 import {
   mockAudits,
@@ -18,7 +19,6 @@ import {
 } from "@/lib/mock-data";
 import { RM, RM2, formatDate, monthLabel, daysUntil } from "@/lib/utils";
 import {
-  ArrowLeft,
   Phone,
   Mail,
   PhoneCall,
@@ -89,12 +89,7 @@ export default function FranchiseeDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Link
-        href="/admin/franchisees"
-        className="inline-flex items-center gap-1.5 text-sm text-[color:var(--color-ink-soft)] hover:text-[color:var(--color-ink)]"
-      >
-        <ArrowLeft size={14} /> Back to all franchisees
-      </Link>
+      <BackButton label="Back" fallbackHref="/admin/franchisees" />
 
       <Card
         className={
@@ -131,29 +126,25 @@ export default function FranchiseeDetailPage() {
       </Card>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiLink
-          href="/admin/royalties"
+        <Kpi
           label="Combined month sales"
           value={RM(agg.monthlyActual)}
           sub={`${agg.salesPct}% of ${RM(agg.monthlyTarget)} target`}
           tone={agg.salesPct >= 90 ? "success" : agg.salesPct >= 70 ? "warning" : "danger"}
         />
-        <KpiLink
-          href="/admin/royalties"
+        <Kpi
           label="Outstanding royalty"
           value={RM2(agg.outstanding)}
           sub={agg.overdueCount > 0 ? `${agg.overdueCount} overdue statement${agg.overdueCount > 1 ? "s" : ""}` : "All settled or pending"}
           tone={agg.overdueCount > 0 ? "danger" : agg.outstanding > 0 ? "warning" : "success"}
         />
-        <KpiLink
-          href="/admin/audits"
+        <Kpi
           label="Avg audit score"
           value={agg.avgAudit !== null ? `${Math.round(agg.avgAudit)}/100` : "—"}
           sub={agg.audits.length > 0 ? `${agg.audits.length} visit${agg.audits.length > 1 ? "s" : ""} on record` : "No audits yet"}
           tone={agg.avgAudit !== null ? (agg.avgAudit >= 85 ? "success" : agg.avgAudit >= 70 ? "warning" : "danger") : undefined}
         />
-        <KpiLink
-          href="/admin/supplies"
+        <Kpi
           label="Open supply orders"
           value={`${agg.openOrders}`}
           sub={`${agg.orders.length} lifetime across outlets`}
@@ -236,87 +227,91 @@ export default function FranchiseeDetailPage() {
       </Card>
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <Link href="/admin/royalties" className="block">
-          <Card className="h-full transition-all hover:-translate-y-0.5 hover:border-[color:var(--color-brand-200)] hover:shadow-[0_12px_28px_-14px_rgba(45,26,14,0.25)] cursor-pointer">
-            <CardTitle>
-              <span className="inline-flex items-center gap-2"><Receipt size={16} className="text-[color:var(--color-brand)]" /> Recent royalty activity</span>
-            </CardTitle>
-            <CardSubtitle>Last 3 statements across all outlets.</CardSubtitle>
+        <Card className="h-full">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle>
+                <span className="inline-flex items-center gap-2"><Receipt size={16} className="text-[color:var(--color-brand)]" /> Royalty statements for {franchisee.owner_name.split(" ")[0]}</span>
+              </CardTitle>
+              <CardSubtitle>Last 3 across all their outlets.</CardSubtitle>
+            </div>
+            <Link href="/admin/royalties" className="shrink-0 text-[12px] font-medium text-[color:var(--color-brand-700)] hover:underline">
+              Full royalties list →
+            </Link>
+          </div>
+          <ul className="mt-3 space-y-2">
+            {agg.royalties
+              .sort((a, b) => (a.period < b.period ? 1 : -1))
+              .slice(0, 3)
+              .map((r) => {
+                const st = r.status === "paid" ? "paid" : daysUntil(r.due_date) < 0 ? "overdue" : r.status;
+                const outlet = outlets.find((o) => o.id === r.outlet_id);
+                return (
+                  <li key={r.id} className="flex items-center justify-between rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2.5">
+                    <div>
+                      <div className="text-sm font-semibold">{monthLabel(r.period)} · {outlet?.outlet_code ?? ""}</div>
+                      <div className="text-[12px] text-[color:var(--color-ink-soft)]">
+                        Due {formatDate(r.due_date)} · {RM2(r.royalty_amount + r.marketing_fee)}
+                      </div>
+                    </div>
+                    <Pill tone={st === "paid" ? "success" : st === "overdue" ? "danger" : "warning"}>
+                      {st === "paid" ? <Check size={12} /> : st === "overdue" ? <AlertCircle size={12} /> : <Clock size={12} />}
+                      {st}
+                    </Pill>
+                  </li>
+                );
+              })}
+          </ul>
+        </Card>
+
+        <Card className="h-full">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle>
+                <span className="inline-flex items-center gap-2"><ShieldCheck size={16} className="text-[color:var(--color-brand)]" /> Audits for {franchisee.owner_name.split(" ")[0]}</span>
+              </CardTitle>
+              <CardSubtitle>Last 3 across all their outlets.</CardSubtitle>
+            </div>
+            <Link href="/admin/audits" className="shrink-0 text-[12px] font-medium text-[color:var(--color-brand-700)] hover:underline">
+              Full audits list →
+            </Link>
+          </div>
+          {agg.audits.length === 0 ? (
+            <div className="mt-3 text-sm text-[color:var(--color-ink-soft)]">No audits recorded yet.</div>
+          ) : (
             <ul className="mt-3 space-y-2">
-              {agg.royalties
-                .sort((a, b) => (a.period < b.period ? 1 : -1))
+              {agg.audits
+                .sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1))
                 .slice(0, 3)
-                .map((r) => {
-                  const st = r.status === "paid" ? "paid" : daysUntil(r.due_date) < 0 ? "overdue" : r.status;
-                  const outlet = outlets.find((o) => o.id === r.outlet_id);
+                .map((a) => {
+                  const outlet = outlets.find((o) => o.id === a.outlet_id);
+                  const failed = a.checklist_items.filter((c) => !c.pass).length;
                   return (
-                    <li key={r.id} className="flex items-center justify-between rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2.5">
+                    <li key={a.id} className="flex items-center justify-between rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2.5">
                       <div>
-                        <div className="text-sm font-semibold">{monthLabel(r.period)} · {outlet?.outlet_code ?? ""}</div>
+                        <div className="text-sm font-semibold">{outlet?.outlet_code ?? ""} · {formatDate(a.audit_date)}</div>
                         <div className="text-[12px] text-[color:var(--color-ink-soft)]">
-                          Due {formatDate(r.due_date)} · {RM2(r.royalty_amount + r.marketing_fee)}
+                          {a.auditor} · {failed > 0 ? `${failed} failed` : "all passed"}
                         </div>
                       </div>
-                      <Pill tone={st === "paid" ? "success" : st === "overdue" ? "danger" : "warning"}>
-                        {st === "paid" ? <Check size={12} /> : st === "overdue" ? <AlertCircle size={12} /> : <Clock size={12} />}
-                        {st}
-                      </Pill>
+                      <span
+                        className={
+                          "inline-flex h-8 w-8 items-center justify-center rounded-full text-[13px] font-semibold " +
+                          (a.score >= 85
+                            ? "bg-[color:var(--color-success-soft)] text-[color:var(--color-success)]"
+                            : a.score >= 70
+                            ? "bg-[color:var(--color-warning-soft)] text-[color:var(--color-warning)]"
+                            : "bg-[color:var(--color-danger-soft)] text-[color:var(--color-danger)]")
+                        }
+                      >
+                        {a.score}
+                      </span>
                     </li>
                   );
                 })}
             </ul>
-            <div className="mt-3 text-[12px] font-medium text-[color:var(--color-brand-700)]">
-              View all statements →
-            </div>
-          </Card>
-        </Link>
-
-        <Link href="/admin/audits" className="block">
-          <Card className="h-full transition-all hover:-translate-y-0.5 hover:border-[color:var(--color-brand-200)] hover:shadow-[0_12px_28px_-14px_rgba(45,26,14,0.25)] cursor-pointer">
-            <CardTitle>
-              <span className="inline-flex items-center gap-2"><ShieldCheck size={16} className="text-[color:var(--color-brand)]" /> Recent audits</span>
-            </CardTitle>
-            <CardSubtitle>HQ compliance visits.</CardSubtitle>
-            {agg.audits.length === 0 ? (
-              <div className="mt-3 text-sm text-[color:var(--color-ink-soft)]">No audits recorded yet.</div>
-            ) : (
-              <ul className="mt-3 space-y-2">
-                {agg.audits
-                  .sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1))
-                  .slice(0, 3)
-                  .map((a) => {
-                    const outlet = outlets.find((o) => o.id === a.outlet_id);
-                    const failed = a.checklist_items.filter((c) => !c.pass).length;
-                    return (
-                      <li key={a.id} className="flex items-center justify-between rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2.5">
-                        <div>
-                          <div className="text-sm font-semibold">{outlet?.outlet_code ?? ""} · {formatDate(a.audit_date)}</div>
-                          <div className="text-[12px] text-[color:var(--color-ink-soft)]">
-                            {a.auditor} · {failed > 0 ? `${failed} failed` : "all passed"}
-                          </div>
-                        </div>
-                        <span
-                          className={
-                            "inline-flex h-8 w-8 items-center justify-center rounded-full text-[13px] font-semibold " +
-                            (a.score >= 85
-                              ? "bg-[color:var(--color-success-soft)] text-[color:var(--color-success)]"
-                              : a.score >= 70
-                              ? "bg-[color:var(--color-warning-soft)] text-[color:var(--color-warning)]"
-                              : "bg-[color:var(--color-danger-soft)] text-[color:var(--color-danger)]")
-                          }
-                        >
-                          {a.score}
-                        </span>
-                      </li>
-                    );
-                  })}
-              </ul>
-            )}
-            <div className="mt-3 text-[12px] font-medium text-[color:var(--color-brand-700)]">
-              View all audits →
-            </div>
-          </Card>
-        </Link>
+          )}
+        </Card>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
@@ -338,38 +333,43 @@ export default function FranchiseeDetailPage() {
           </div>
         </Card>
 
-        <Link href="/admin/supplies" className="block">
-          <Card className="h-full transition-all hover:-translate-y-0.5 hover:border-[color:var(--color-brand-200)] hover:shadow-[0_12px_28px_-14px_rgba(45,26,14,0.25)] cursor-pointer">
-            <CardTitle>
-              <span className="inline-flex items-center gap-2"><Package size={16} className="text-[color:var(--color-brand)]" /> Supply orders</span>
-            </CardTitle>
-            <CardSubtitle>Across all their outlets.</CardSubtitle>
-            <div className="mt-3 grid grid-cols-2 gap-3 text-center">
-              <div className="rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-3">
-                <div className="text-[12px] text-[color:var(--color-ink-soft)]">Open</div>
-                <div className="mt-1 text-2xl font-semibold text-[color:var(--color-brand-700)]">{agg.openOrders}</div>
-              </div>
-              <div className="rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-3">
-                <div className="text-[12px] text-[color:var(--color-ink-soft)]">Delivered lifetime</div>
-                <div className="mt-1 text-2xl font-semibold">
-                  {agg.orders.filter((o) => o.status === "delivered").length}
-                </div>
+        <Card className="h-full">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle>
+                <span className="inline-flex items-center gap-2"><Package size={16} className="text-[color:var(--color-brand)]" /> Supply orders for {franchisee.owner_name.split(" ")[0]}</span>
+              </CardTitle>
+              <CardSubtitle>Across all their outlets.</CardSubtitle>
+            </div>
+            <Link href="/admin/supplies" className="shrink-0 text-[12px] font-medium text-[color:var(--color-brand-700)] hover:underline">
+              Manage all orders →
+            </Link>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3 text-center">
+            <div className="rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-3">
+              <div className="text-[12px] text-[color:var(--color-ink-soft)]">Open</div>
+              <div className="mt-1 text-2xl font-semibold text-[color:var(--color-brand-700)]">{agg.openOrders}</div>
+            </div>
+            <div className="rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-3">
+              <div className="text-[12px] text-[color:var(--color-ink-soft)]">Delivered lifetime</div>
+              <div className="mt-1 text-2xl font-semibold">
+                {agg.orders.filter((o) => o.status === "delivered").length}
               </div>
             </div>
-            <div className="mt-3 text-[12px] font-medium text-[color:var(--color-brand-700)]">
-              Manage orders →
-            </div>
-          </Card>
-        </Link>
+          </div>
+        </Card>
+      </div>
+
+      <div className="flex justify-center pt-2">
+        <BackButton label="Back to previous page" fallbackHref="/admin/franchisees" />
       </div>
     </div>
   );
 }
 
-function KpiLink({
-  href, label, value, sub, tone,
+function Kpi({
+  label, value, sub, tone,
 }: {
-  href: string;
   label: string;
   value: string;
   sub: string;
@@ -381,13 +381,11 @@ function KpiLink({
     : tone === "danger" ? "text-[color:var(--color-danger)]"
     : "";
   return (
-    <Link href={href} className="block">
-      <Card className="h-full transition-all hover:-translate-y-0.5 hover:border-[color:var(--color-brand-200)] hover:shadow-[0_12px_28px_-14px_rgba(45,26,14,0.25)] cursor-pointer">
-        <div className="text-[12px] font-medium text-[color:var(--color-ink-soft)]">{label}</div>
-        <div className={"mt-2 text-[22px] font-semibold " + toneCls}>{value}</div>
-        <div className="mt-1 text-[12px] text-[color:var(--color-ink-soft)]">{sub}</div>
-      </Card>
-    </Link>
+    <Card className="h-full">
+      <div className="text-[12px] font-medium text-[color:var(--color-ink-soft)]">{label}</div>
+      <div className={"mt-2 text-[22px] font-semibold " + toneCls}>{value}</div>
+      <div className="mt-1 text-[12px] text-[color:var(--color-ink-soft)]">{sub}</div>
+    </Card>
   );
 }
 

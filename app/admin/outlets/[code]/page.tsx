@@ -6,6 +6,7 @@ import { useMemo } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
+import { BackButton } from "@/components/ui/BackButton";
 import { Sparkline } from "@/components/charts/Sparkline";
 import {
   mockAudits,
@@ -18,7 +19,6 @@ import {
 } from "@/lib/mock-data";
 import { RM, RM2, formatDate, monthLabel, daysUntil } from "@/lib/utils";
 import {
-  ArrowLeft,
   Phone,
   Mail,
   PhoneCall,
@@ -100,12 +100,7 @@ export default function OutletDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Link
-        href="/admin/dashboard"
-        className="inline-flex items-center gap-1.5 text-sm text-[color:var(--color-ink-soft)] hover:text-[color:var(--color-ink)]"
-      >
-        <ArrowLeft size={14} /> Back to War Room
-      </Link>
+      <BackButton label="Back" fallbackHref="/admin/dashboard" />
 
       <Card
         className={
@@ -147,27 +142,23 @@ export default function OutletDetailPage() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi
-          href="/admin/royalties"
           label="Month sales"
           value={RM(outlet.monthly_actual)}
           sub={`${pct}% of ${RM(outlet.monthly_target)} target`}
           tone={pct >= 90 ? "success" : pct >= 70 ? "warning" : "danger"}
         />
         <Kpi
-          href="/admin/royalties"
           label="Avg ticket"
           value={RM(Math.round(avgTicket))}
           sub={`${monthTxn.toLocaleString()} transactions this month`}
         />
         <Kpi
-          href="/admin/audits"
           label="Latest audit"
           value={latestAudit ? `${latestAudit.score}/100` : "—"}
           sub={latestAudit ? `${formatDate(latestAudit.audit_date)} · ${latestAudit.auditor}` : "No audit yet"}
           tone={latestAudit ? (latestAudit.score >= 85 ? "success" : latestAudit.score >= 70 ? "warning" : "danger") : undefined}
         />
         <Kpi
-          href="/admin/training"
           label="Training complete"
           value={`${trainingPct}%`}
           sub={`${Math.round((trainingPct / 100) * mockTrainingModules.length)}/${mockTrainingModules.length} modules passed`}
@@ -209,10 +200,16 @@ export default function OutletDetailPage() {
           </div>
         </Card>
 
-        <Link href="/admin/royalties" className="block">
-        <Card className="h-full transition-all hover:-translate-y-0.5 hover:border-[color:var(--color-brand-200)] hover:shadow-[0_12px_28px_-14px_rgba(45,26,14,0.25)] cursor-pointer">
-          <CardTitle>Royalty status</CardTitle>
-          <CardSubtitle>Most recent 3 statements.</CardSubtitle>
+        <Card>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle>Royalty status for this outlet</CardTitle>
+              <CardSubtitle>Most recent 3 statements.</CardSubtitle>
+            </div>
+            <Link href="/admin/royalties" className="shrink-0 text-[12px] font-medium text-[color:var(--color-brand-700)] hover:underline">
+              Full royalties list →
+            </Link>
+          </div>
           <ul className="mt-3 space-y-2">
             {royalties.slice(0, 3).map((r) => {
               const st = r.status === "paid" ? "paid" : daysUntil(r.due_date) < 0 ? "overdue" : r.status;
@@ -232,23 +229,17 @@ export default function OutletDetailPage() {
               );
             })}
           </ul>
-          {latestRoyalty && (
-            <span className="mt-3 inline-block text-[12px] font-medium text-[color:var(--color-brand-700)]">
-              View all statements →
-            </span>
-          )}
         </Card>
-        </Link>
       </div>
 
       <Card className="overflow-x-auto p-0">
         <div className="flex items-start justify-between gap-3 px-4 py-3">
           <div>
-            <CardTitle>Audit history</CardTitle>
-            <CardSubtitle>HQ compliance visits.</CardSubtitle>
+            <CardTitle>Audit history for this outlet</CardTitle>
+            <CardSubtitle>HQ compliance visits to {outlet.outlet_code} only.</CardSubtitle>
           </div>
           <Link href="/admin/audits" className="shrink-0 text-[12px] font-medium text-[color:var(--color-brand-700)] hover:underline">
-            View all audits →
+            All-group audits list →
           </Link>
         </div>
         {audits.length === 0 ? (
@@ -332,11 +323,11 @@ export default function OutletDetailPage() {
       <Card className="overflow-x-auto p-0">
         <div className="flex items-start justify-between gap-3 px-4 py-3">
           <div>
-            <CardTitle>Recent daily sales</CardTitle>
-            <CardSubtitle>Last 10 days of reported revenue.</CardSubtitle>
+            <CardTitle>Recent daily sales — {outlet.outlet_code}</CardTitle>
+            <CardSubtitle>Last 10 days reported by this outlet.</CardSubtitle>
           </div>
           <Link href={`/admin/franchisees/${franchisee.id}`} className="shrink-0 text-[12px] font-medium text-[color:var(--color-brand-700)] hover:underline">
-            Owner summary →
+            Owner profile ({franchisee.owner_name.split(" ")[0]}) →
           </Link>
         </div>
         <table className="w-full text-sm">
@@ -360,6 +351,10 @@ export default function OutletDetailPage() {
           </tbody>
         </table>
       </Card>
+
+      <div className="flex justify-center pt-2">
+        <BackButton label="Back to previous page" fallbackHref="/admin/dashboard" />
+      </div>
     </div>
   );
 }
