@@ -14,11 +14,13 @@ import {
   GraduationCap,
   Megaphone,
   Package,
+  TrendingUp,
   LogOut,
 } from "lucide-react";
 
 const nav = [
   { href: "/admin/dashboard",     label: "War Room",     icon: <LayoutDashboard size={18} /> },
+  { href: "/admin/sales",         label: "Daily sales",  icon: <TrendingUp size={18} /> },
   { href: "/admin/franchisees",   label: "Franchisees",  icon: <Users size={18} /> },
   { href: "/admin/royalties",     label: "Royalties",    icon: <Receipt size={18} /> },
   { href: "/admin/supplies",      label: "Supplies",     icon: <Package size={18} /> },
