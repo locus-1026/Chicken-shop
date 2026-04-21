@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
@@ -34,10 +34,38 @@ function channelTop(mix: SalesReport["channel_mix"]) {
   return `${label} ${top[1]}%`;
 }
 
+const SALES_KEY = (outletId: string) => `cc.sales-new.${outletId}`;
+
 export default function AdminSalesPage() {
   const toast = useToast();
   const [query, setQuery] = useState("");
   const [filterOutlet, setFilterOutlet] = useState<"all" | string>("all");
+  const [localReports, setLocalReports] = useState<SalesReport[]>([]);
+
+  // Pull in any franchisee-submitted reports from localStorage on mount.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const gathered: SalesReport[] = [];
+    for (const o of mockOutlets) {
+      const raw = window.localStorage.getItem(SALES_KEY(o.id));
+      if (!raw) continue;
+      try {
+        gathered.push(...(JSON.parse(raw) as SalesReport[]));
+      } catch {
+        /* ignore */
+      }
+    }
+    setLocalReports(gathered);
+  }, []);
+
+  // Merge seed + franchisee-submitted, deduping by (outlet_id, date).
+  const allReports = useMemo(() => {
+    const key = (r: SalesReport) => `${r.outlet_id}:${r.report_date}`;
+    const byKey = new Map<string, SalesReport>();
+    for (const r of mockSalesReports) byKey.set(key(r), r);
+    for (const r of localReports) byKey.set(key(r), r); // local wins
+    return Array.from(byKey.values());
+  }, [localReports]);
 
   const today = new Date().toISOString().slice(0, 10);
   const yesterday = (() => {
@@ -51,7 +79,7 @@ export default function AdminSalesPage() {
     () =>
       mockOutlets.map((o) => {
         const franchisee = mockFranchisees.find((f) => f.id === o.franchisee_id);
-        const reports = mockSalesReports.filter((r) => r.outlet_id === o.id);
+        const reports = allReports.filter((r) => r.outlet_id === o.id);
         const todays = reports.find((r) => r.report_date === today);
         const yesterdays = reports.find((r) => r.report_date === yesterday);
         const last7 = [...reports]
@@ -61,7 +89,7 @@ export default function AdminSalesPage() {
         const latest = [...reports].sort((a, b) => (a.report_date < b.report_date ? 1 : -1))[0];
         return { outlet: o, franchisee, todays, yesterdays, latest, week };
       }),
-    [today, yesterday]
+    [today, yesterday, allReports]
   );
 
   const submittedToday = perOutlet.filter((p) => p.todays).length;
@@ -72,7 +100,7 @@ export default function AdminSalesPage() {
   // Recent submissions across every outlet.
   const recentRows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return mockSalesReports
+    return allReports
       .map((r) => {
         const outlet = mockOutlets.find((o) => o.id === r.outlet_id);
         const franchisee = outlet ? mockFranchisees.find((f) => f.id === outlet.franchisee_id) : undefined;
@@ -88,7 +116,7 @@ export default function AdminSalesPage() {
       )
       .sort((a, b) => (a.report_date < b.report_date ? 1 : -1))
       .slice(0, 30);
-  }, [query, filterOutlet]);
+  }, [query, filterOutlet, allReports]);
 
   const exportCsv = () => {
     const rows = [

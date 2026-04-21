@@ -27,31 +27,50 @@ const ORDERS_KEY = (outletId: string) => `cc.supply-orders.${outletId}`;
 export default function SuppliesPage() {
   const toast = useToast();
   const { outlet } = useCurrentOutlet();
+  const mockOutletId = resolveMockOutletId(outlet);
   const [tab, setTab] = useState<"order" | "history">("order");
   const [qty, setQty] = useState<Record<string, number>>({});
   const [locallyPlaced, setLocallyPlaced] = useState<SupplyOrder[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  // Load any orders the franchisee placed from this device so they don't vanish on refresh.
+  // Load any orders the franchisee placed from this device so they don't vanish
+  // on refresh. We store under the mock outlet id so the admin page can find
+  // them under the same key. If anything is still saved under the raw Supabase
+  // UUID from an earlier session, migrate it over.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const raw = window.localStorage.getItem(ORDERS_KEY(outlet.id));
-    setLocallyPlaced(raw ? (JSON.parse(raw) as SupplyOrder[]) : []);
-  }, [outlet.id]);
+    const legacy = window.localStorage.getItem(ORDERS_KEY(outlet.id));
+    const current = window.localStorage.getItem(ORDERS_KEY(mockOutletId));
+    if (legacy && outlet.id !== mockOutletId) {
+      try {
+        const merged = [
+          ...(JSON.parse(legacy) as SupplyOrder[]),
+          ...(current ? (JSON.parse(current) as SupplyOrder[]) : []),
+        ];
+        window.localStorage.setItem(ORDERS_KEY(mockOutletId), JSON.stringify(merged));
+        window.localStorage.removeItem(ORDERS_KEY(outlet.id));
+        setLocallyPlaced(merged);
+        return;
+      } catch {
+        // fall through
+      }
+    }
+    setLocallyPlaced(current ? (JSON.parse(current) as SupplyOrder[]) : []);
+  }, [outlet.id, mockOutletId]);
 
   const persistPlaced = (next: SupplyOrder[]) => {
     setLocallyPlaced(next);
     if (typeof window !== "undefined") {
-      window.localStorage.setItem(ORDERS_KEY(outlet.id), JSON.stringify(next));
+      window.localStorage.setItem(ORDERS_KEY(mockOutletId), JSON.stringify(next));
     }
   };
 
   const history = useMemo(() => {
-    const baseline = mockSupplyOrders.filter((o) => o.outlet_id === resolveMockOutletId(outlet));
+    const baseline = mockSupplyOrders.filter((o) => o.outlet_id === mockOutletId);
     return [...locallyPlaced, ...baseline].sort(
       (a, b) => (a.submitted_at < b.submitted_at ? 1 : -1)
     );
-  }, [locallyPlaced, outlet.id]);
+  }, [locallyPlaced, mockOutletId]);
 
   const adjust = (id: string, d: number) =>
     setQty((prev) => ({ ...prev, [id]: Math.max(0, (prev[id] ?? 0) + d) }));
@@ -69,7 +88,7 @@ export default function SuppliesPage() {
       .map((c) => ({ sku: c.id, name: c.name, unit: c.unit, qty: qty[c.id], unit_price: c.price }));
     const newOrder: SupplyOrder = {
       id: "so-new-" + Date.now(),
-      outlet_id: outlet.id,
+      outlet_id: mockOutletId,
       submitted_at: new Date().toISOString(),
       status: "submitted",
       items,

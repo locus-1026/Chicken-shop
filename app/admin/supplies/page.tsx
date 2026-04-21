@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
@@ -26,10 +26,34 @@ import {
 
 type Status = SupplyOrder["status"];
 const FLOW: Status[] = ["submitted", "confirmed", "shipped", "delivered"];
+const ORDERS_KEY = (outletId: string) => `cc.supply-orders.${outletId}`;
 
 export default function AdminSuppliesPage() {
   const toast = useToast();
   const [orders, setOrders] = useState<SupplyOrder[]>(mockSupplyOrders);
+
+  // On mount, merge any franchisee-placed orders saved in localStorage
+  // (keyed by mock outlet id) so HQ can see + action them.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const franchiseeOrders: SupplyOrder[] = [];
+    for (const o of mockOutlets) {
+      const raw = window.localStorage.getItem(ORDERS_KEY(o.id));
+      if (!raw) continue;
+      try {
+        const parsed = JSON.parse(raw) as SupplyOrder[];
+        franchiseeOrders.push(...parsed);
+      } catch {
+        // ignore malformed entries
+      }
+    }
+    if (franchiseeOrders.length === 0) return;
+    setOrders((prev) => {
+      const seen = new Set(prev.map((o) => o.id));
+      const additions = franchiseeOrders.filter((o) => !seen.has(o.id));
+      return [...additions, ...prev];
+    });
+  }, []);
   const [filter, setFilter] = useState<"all" | Status>("all");
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -67,29 +91,45 @@ export default function AdminSuppliesPage() {
     .filter((o) => o.status !== "delivered" && o.status !== "cancelled")
     .reduce((s, o) => s + o.total, 0);
 
+  // Persist an order back to its outlet's localStorage bucket so franchisees
+  // see the updated status on their Past orders tab.
+  const syncToLocalStorage = (updated: SupplyOrder) => {
+    if (typeof window === "undefined") return;
+    const key = ORDERS_KEY(updated.outlet_id);
+    const raw = window.localStorage.getItem(key);
+    let list: SupplyOrder[] = [];
+    try {
+      list = raw ? (JSON.parse(raw) as SupplyOrder[]) : [];
+    } catch {
+      list = [];
+    }
+    const idx = list.findIndex((o) => o.id === updated.id);
+    if (idx >= 0) list[idx] = updated;
+    else list.unshift(updated);
+    window.localStorage.setItem(key, JSON.stringify(list));
+  };
+
   const advance = (id: string) => {
     const current = orders.find((o) => o.id === id);
     if (!current) return;
     const nextStatus = FLOW[Math.min(FLOW.indexOf(current.status) + 1, FLOW.length - 1)] ?? current.status;
     if (nextStatus === current.status) return;
-    setOrders((prev) =>
-      prev.map((o) =>
-        o.id === id
-          ? {
-              ...o,
-              status: nextStatus,
-              delivered_at: nextStatus === "delivered" ? new Date().toISOString() : o.delivered_at ?? null,
-            }
-          : o
-      )
-    );
+    const updated: SupplyOrder = {
+      ...current,
+      status: nextStatus,
+      delivered_at: nextStatus === "delivered" ? new Date().toISOString() : current.delivered_at ?? null,
+    };
+    setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
+    syncToLocalStorage(updated);
     toast("success", `Order ${id.slice(-4)} moved to ${nextStatus}.`);
   };
 
   const cancel = (id: string) => {
-    setOrders((prev) =>
-      prev.map((o) => (o.id === id ? { ...o, status: "cancelled" } : o))
-    );
+    const current = orders.find((o) => o.id === id);
+    if (!current) return;
+    const updated: SupplyOrder = { ...current, status: "cancelled" };
+    setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
+    syncToLocalStorage(updated);
     toast("info", `Order ${id.slice(-4)} cancelled.`);
   };
 

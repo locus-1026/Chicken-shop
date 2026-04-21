@@ -13,13 +13,16 @@ import { Check, Clock, AlertCircle, Upload, FileText, X, Copy } from "lucide-rea
 
 type Status = Royalty["status"];
 const PROOF_KEY = (outletId: string) => `cc.royalty-proofs.${outletId}`;
+const PAID_KEY  = (outletId: string) => `cc.royalty-paid.${outletId}`;
 
 type ProofMap = Record<string, { fileName: string; reference: string; submittedAt: string }>;
+type PaidMap  = Record<string, { paid_at: string }>;
 
 export default function RoyaltyPage() {
   const { outlet } = useCurrentOutlet();
   const toast = useToast();
   const [proofs, setProofs] = useState<ProofMap>({});
+  const [paidMap, setPaidMap] = useState<PaidMap>({});
   const [activeRowId, setActiveRowId] = useState<string | null>(null);
 
   // Use the mock outlet id as the localStorage key so admin + portal agree.
@@ -44,6 +47,10 @@ export default function RoyaltyPage() {
       }
     }
     setProofs(current ? JSON.parse(current) : {});
+
+    // Also load any HQ-confirmed payments so the statement flips to Paid here.
+    const rawPaid = window.localStorage.getItem(PAID_KEY(mockOutletId));
+    setPaidMap(rawPaid ? JSON.parse(rawPaid) : {});
   }, [outlet.id, mockOutletId]);
 
   const persist = (next: ProofMap) => {
@@ -61,7 +68,7 @@ export default function RoyaltyPage() {
   );
 
   const effectiveStatus = (r: Royalty): Status => {
-    if (r.status === "paid") return "paid";
+    if (r.status === "paid" || paidMap[r.id]) return "paid";
     if (proofs[r.id]) return "submitted";
     if (daysUntil(r.due_date) < 0) return "overdue";
     return r.status;

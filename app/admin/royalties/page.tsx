@@ -15,8 +15,10 @@ import { FileText, Check, AlertTriangle, X, Clock, Shield } from "lucide-react";
 // Shape the franchisee-side uploads. Same key used on the portal royalty page.
 type Proof = { fileName: string; reference: string; submittedAt: string };
 type ProofsByRowId = Record<string, Proof>;
+type PaidMap = Record<string, { paid_at: string }>; // rowId → payment timestamp
 
 const PROOF_KEY = (outletId: string) => `cc.royalty-proofs.${outletId}`;
+const PAID_KEY  = (outletId: string) => `cc.royalty-paid.${outletId}`;
 
 export default function AdminRoyaltiesPage() {
   const toast = useToast();
@@ -28,22 +30,45 @@ export default function AdminRoyaltiesPage() {
   const [verifying, setVerifying] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null); // no-proof confirmation
 
-  // Load franchisee-uploaded proofs from every outlet's localStorage bucket.
+  // Load franchisee-uploaded proofs + HQ-confirmed payments from every outlet's
+  // localStorage bucket so both sides stay in sync across sessions.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const merged: ProofsByRowId = {};
+    const mergedProofs: ProofsByRowId = {};
+    const paidRows: PaidMap = {};
     for (const o of mockOutlets) {
-      const raw = window.localStorage.getItem(PROOF_KEY(o.id));
-      if (!raw) continue;
-      try {
-        const parsed = JSON.parse(raw) as ProofsByRowId;
-        Object.assign(merged, parsed);
-      } catch {
-        // ignore malformed entries
+      const rawProof = window.localStorage.getItem(PROOF_KEY(o.id));
+      if (rawProof) {
+        try { Object.assign(mergedProofs, JSON.parse(rawProof) as ProofsByRowId); }
+        catch { /* ignore */ }
+      }
+      const rawPaid = window.localStorage.getItem(PAID_KEY(o.id));
+      if (rawPaid) {
+        try { Object.assign(paidRows, JSON.parse(rawPaid) as PaidMap); }
+        catch { /* ignore */ }
       }
     }
-    setProofs(merged);
+    setProofs(mergedProofs);
+    // Apply any HQ-confirmed payments to the seed rows.
+    if (Object.keys(paidRows).length > 0) {
+      setRows((prev) =>
+        prev.map((r) =>
+          paidRows[r.id] ? { ...r, status: "paid", paid_at: paidRows[r.id].paid_at } : r
+        )
+      );
+    }
   }, []);
+
+  // Persist a paid row so franchisee sees "Paid" on their side.
+  const persistPaid = (rowId: string, outletId: string, paid_at: string) => {
+    if (typeof window === "undefined") return;
+    const key = PAID_KEY(outletId);
+    const raw = window.localStorage.getItem(key);
+    let map: PaidMap = {};
+    try { map = raw ? JSON.parse(raw) : {}; } catch { map = {}; }
+    map[rowId] = { paid_at };
+    window.localStorage.setItem(key, JSON.stringify(map));
+  };
 
   const removeProof = (rowId: string) => {
     const row = rows.find((r) => r.id === rowId);
@@ -73,7 +98,10 @@ export default function AdminRoyaltiesPage() {
   };
 
   const markPaid = (id: string) => {
-    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, status: "paid", paid_at: new Date().toISOString() } : r)));
+    const paid_at = new Date().toISOString();
+    const row = rows.find((r) => r.id === id);
+    if (row) persistPaid(id, row.outlet_id, paid_at);
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, status: "paid", paid_at } : r)));
     toast("success", "Marked as paid.");
   };
 
@@ -111,10 +139,15 @@ export default function AdminRoyaltiesPage() {
       toast("info", "Every royalty for this period is already settled.");
       return;
     }
+    const paid_at = new Date().toISOString();
+    // Persist each row's paid state so franchisees see the update.
+    filtered.forEach((r) => {
+      if (r.status !== "paid") persistPaid(r.id, r.outlet_id, paid_at);
+    });
     setRows((prev) =>
       prev.map((r) =>
         r.period === period && r.status !== "paid"
-          ? { ...r, status: "paid", paid_at: new Date().toISOString() }
+          ? { ...r, status: "paid", paid_at }
           : r
       )
     );

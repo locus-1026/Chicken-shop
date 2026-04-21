@@ -7,6 +7,9 @@ import { Pill } from "@/components/ui/Pill";
 import { Sparkline } from "@/components/charts/Sparkline";
 import { fireConfetti } from "@/components/ui/Confetti";
 import { mockSalesReports, resolveMockOutletId } from "@/lib/mock-data";
+import type { SalesReport } from "@/lib/types";
+
+const SALES_KEY = (outletId: string) => `cc.sales-new.${outletId}`;
 import { useCurrentOutlet } from "@/lib/current-outlet";
 import { useToast } from "@/components/ui/Toast";
 import { RM, formatDate } from "@/lib/utils";
@@ -25,9 +28,20 @@ export default function SalesPage() {
   const { outlet } = useCurrentOutlet();
   const toast = useToast();
   const mockOutletId = resolveMockOutletId(outlet);
-  const [reports, setReports] = useState(
-    mockSalesReports.filter((s) => s.outlet_id === mockOutletId).sort((a, b) => (a.report_date < b.report_date ? 1 : -1))
-  );
+
+  // Merge baseline seed + any new reports this franchisee has submitted from
+  // this device. Key is shared with the admin Daily sales view so HQ sees them.
+  const loadReports = (): SalesReport[] => {
+    const baseline = mockSalesReports.filter((s) => s.outlet_id === mockOutletId);
+    if (typeof window === "undefined") return [...baseline].sort((a, b) => (a.report_date < b.report_date ? 1 : -1));
+    const raw = window.localStorage.getItem(SALES_KEY(mockOutletId));
+    const local: SalesReport[] = raw ? JSON.parse(raw) : [];
+    const seen = new Set(local.map((r) => r.report_date));
+    const merged = [...local, ...baseline.filter((b) => !seen.has(b.report_date))];
+    return merged.sort((a, b) => (a.report_date < b.report_date ? 1 : -1));
+  };
+
+  const [reports, setReports] = useState<SalesReport[]>(loadReports);
   const [gross, setGross] = useState("");
   const [transactions, setTransactions] = useState("");
   // Channel split sliders — default guided by category benchmarks.
@@ -38,10 +52,9 @@ export default function SalesPage() {
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    setReports(
-      mockSalesReports.filter((s) => s.outlet_id === mockOutletId).sort((a, b) => (a.report_date < b.report_date ? 1 : -1))
-    );
+    setReports(loadReports());
     setMessage(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mockOutletId]);
 
   const channelTotal = dineIn + takeaway + delivery;
@@ -94,9 +107,9 @@ export default function SalesPage() {
       return;
     }
     const today = new Date().toISOString().slice(0, 10);
-    const newReport = {
+    const newReport: SalesReport = {
       id: "s-new-" + Date.now(),
-      outlet_id: outlet.id,
+      outlet_id: mockOutletId,
       report_date: today,
       gross_sales: g,
       transactions: tx,
@@ -104,7 +117,16 @@ export default function SalesPage() {
       channel_mix: { dine_in: dineIn, takeaway, delivery },
       beverage_pct: beveragePct,
     };
-    setReports([newReport, ...reports.filter((r) => r.report_date !== today)]);
+    const next = [newReport, ...reports.filter((r) => r.report_date !== today)];
+    setReports(next);
+    // Persist only the franchisee-submitted ones (dedup by date) so admin can
+    // see the latest without re-reading seed data twice.
+    if (typeof window !== "undefined") {
+      const raw = window.localStorage.getItem(SALES_KEY(mockOutletId));
+      const existing: SalesReport[] = raw ? JSON.parse(raw) : [];
+      const deduped = [newReport, ...existing.filter((r) => r.report_date !== today)];
+      window.localStorage.setItem(SALES_KEY(mockOutletId), JSON.stringify(deduped));
+    }
     setGross("");
     setTransactions("");
     if (g > avg) {
