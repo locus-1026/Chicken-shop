@@ -71,25 +71,36 @@ export default function PortalHome() {
         <StaggerItem>
           <Card>
             <CardTitle>Royalty this month</CardTitle>
-            <CardSubtitle>{formatDate(royalty.period)}</CardSubtitle>
-            <div className="mt-3 flex items-end justify-between">
-              <div>
-                <div className="text-[28px] font-semibold">{RM2(royalty.royalty_amount + royalty.marketing_fee)}</div>
-                <div className="text-[12px] text-[color:var(--color-ink-soft)]">
-                  Royalty {RM2(royalty.royalty_amount)} · Marketing {RM2(royalty.marketing_fee)}
+            {royalty ? (
+              <>
+                <CardSubtitle>{formatDate(royalty.period)}</CardSubtitle>
+                <div className="mt-3 flex items-end justify-between">
+                  <div>
+                    <div className="text-[28px] font-semibold">{RM2(royalty.royalty_amount + royalty.marketing_fee)}</div>
+                    <div className="text-[12px] text-[color:var(--color-ink-soft)]">
+                      Royalty {RM2(royalty.royalty_amount)} · Marketing {RM2(royalty.marketing_fee)}
+                    </div>
+                  </div>
+                  <Pill tone={royaltyStatus === "paid" ? "success" : royaltyStatus === "overdue" ? "danger" : "warning"}>
+                    {royaltyStatus === "paid" ? <Check size={12} /> : <Clock size={12} />}
+                    {royaltyStatus}
+                  </Pill>
                 </div>
-              </div>
-              <Pill tone={royaltyStatus === "paid" ? "success" : royaltyStatus === "overdue" ? "danger" : "warning"}>
-                {royaltyStatus === "paid" ? <Check size={12} /> : <Clock size={12} />}
-                {royaltyStatus}
-              </Pill>
-            </div>
-            <div className="mt-4 text-[12px] text-[color:var(--color-ink-soft)]">
-              Due {formatDate(royalty.due_date)} ·{" "}
-              {daysUntil(royalty.due_date) >= 0
-                ? `${daysUntil(royalty.due_date)} days left`
-                : `${Math.abs(daysUntil(royalty.due_date))} days overdue`}
-            </div>
+                <div className="mt-4 text-[12px] text-[color:var(--color-ink-soft)]">
+                  Due {formatDate(royalty.due_date)} ·{" "}
+                  {daysUntil(royalty.due_date) >= 0
+                    ? `${daysUntil(royalty.due_date)} days left`
+                    : `${Math.abs(daysUntil(royalty.due_date))} days overdue`}
+                </div>
+              </>
+            ) : (
+              <>
+                <CardSubtitle>No royalty statement yet.</CardSubtitle>
+                <div className="mt-4 rounded-xl bg-[color:var(--color-brand-50)] px-4 py-6 text-center text-[13px] text-[color:var(--color-brand-700)]">
+                  HQ generates your first statement after your first full month of trading.
+                </div>
+              </>
+            )}
           </Card>
         </StaggerItem>
       </Stagger>
