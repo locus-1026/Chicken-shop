@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import type { Franchisee, Outlet } from "./types";
 import { createSupabaseBrowserClient } from "./supabase/client";
+import { PREFERRED_CODE_KEY } from "./outlet-logins";
 
 type Ctx = {
   outletId: string | null;
@@ -40,9 +41,23 @@ export function OutletProvider({
       const outletList = (oData ?? []) as Outlet[];
       setOutlets(outletList);
 
-      const saved = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
-      const defaultId = saved && outletList.some((o) => o.id === saved) ? saved : outletList[0]?.id ?? null;
+      let defaultId: string | null = null;
+      if (typeof window !== "undefined") {
+        const savedId = window.localStorage.getItem(STORAGE_KEY);
+        const preferredCode = window.localStorage.getItem(PREFERRED_CODE_KEY);
+        if (preferredCode) {
+          const match = outletList.find((o) => o.outlet_code === preferredCode);
+          if (match) defaultId = match.id;
+          // Consume the preferred code once applied.
+          window.localStorage.removeItem(PREFERRED_CODE_KEY);
+        }
+        if (!defaultId && savedId && outletList.some((o) => o.id === savedId)) {
+          defaultId = savedId;
+        }
+      }
+      if (!defaultId) defaultId = outletList[0]?.id ?? null;
       setOutletIdState(defaultId);
+      if (defaultId && typeof window !== "undefined") window.localStorage.setItem(STORAGE_KEY, defaultId);
       setReady(true);
     })();
   }, [franchiseeId]);
