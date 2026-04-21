@@ -25,7 +25,7 @@ insert into public.training_modules (id, title, description, video_url, material
   ('33333333-3333-3333-3333-333333333305', 'Brand Standards & Outlet Display', 'Storefront merchandising, uniform, and signage guidelines.', null, 'https://example.com/pdfs/brand-standards.pdf', 'Brand', 70);
 
 -- Royalties (3 months)
-insert into public.royalties (outlet_id, period, gross_sales, due_date, status, paid_at) values
+insert into public.royalties (outlet_id, billing_period, gross_sales, due_date, status, paid_at) values
   ('22222222-2222-2222-2222-222222222201', date_trunc('month', current_date - interval '3 month')::date, 168500, (date_trunc('month', current_date - interval '3 month') + interval '14 days')::date, 'paid',   now() - interval '70 days'),
   ('22222222-2222-2222-2222-222222222201', date_trunc('month', current_date - interval '2 month')::date, 175200, (date_trunc('month', current_date - interval '2 month') + interval '14 days')::date, 'paid',   now() - interval '40 days'),
   ('22222222-2222-2222-2222-222222222201', date_trunc('month', current_date - interval '1 month')::date, 172400, (date_trunc('month', current_date - interval '1 month') + interval '14 days')::date, 'pending', null),

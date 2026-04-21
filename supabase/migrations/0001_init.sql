@@ -48,7 +48,7 @@ create type royalty_status as enum ('pending', 'paid', 'overdue');
 create table public.royalties (
   id uuid primary key default gen_random_uuid(),
   outlet_id uuid not null references public.outlets(id) on delete cascade,
-  period date not null, -- first of month
+  billing_period date not null, -- first of month
   gross_sales numeric(12,2) not null default 0,
   royalty_amount numeric(12,2) generated always as (gross_sales * 0.05) stored,
   marketing_fee numeric(12,2) generated always as (gross_sales * 0.02) stored,
@@ -56,7 +56,7 @@ create table public.royalties (
   paid_at timestamptz,
   status royalty_status not null default 'pending',
   created_at timestamptz default now(),
-  unique (outlet_id, period)
+  unique (outlet_id, billing_period)
 );
 
 create table public.sales_reports (
@@ -253,7 +253,7 @@ declare
   period_start date := date_trunc('month', current_date - interval '1 month')::date;
   due date := (current_date + interval '14 days')::date;
 begin
-  insert into public.royalties (outlet_id, period, gross_sales, due_date)
+  insert into public.royalties (outlet_id, billing_period, gross_sales, due_date)
   select o.id, period_start, coalesce(sum(s.gross_sales),0), due
   from public.outlets o
   left join public.sales_reports s
@@ -261,7 +261,7 @@ begin
    and s.report_date >= period_start
    and s.report_date < period_start + interval '1 month'
   group by o.id
-  on conflict (outlet_id, period) do nothing;
+  on conflict (outlet_id, billing_period) do nothing;
 end $$;
 
 -- Risk flag trigger
