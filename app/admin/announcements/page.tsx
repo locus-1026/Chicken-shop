@@ -1,0 +1,144 @@
+"use client";
+
+import { useRef, useState } from "react";
+import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { Pill } from "@/components/ui/Pill";
+import { mockAnnouncements } from "@/lib/mock-data";
+import { formatDate } from "@/lib/utils";
+import type { Announcement, UserRole } from "@/lib/types";
+import { Send, Eye } from "lucide-react";
+
+export default function AdminAnnouncementsPage() {
+  const [list, setList] = useState<Announcement[]>(mockAnnouncements);
+  const [title, setTitle] = useState("");
+  const [target, setTarget] = useState<"all" | UserRole>("all");
+  const [schedule, setSchedule] = useState("");
+  const [preview, setPreview] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  const exec = (cmd: string) => document.execCommand(cmd, false);
+
+  const publish = () => {
+    const body = bodyRef.current?.innerHTML ?? "";
+    if (!title.trim() || !body.trim()) return;
+    const a: Announcement = {
+      id: "an-new-" + Date.now(),
+      title,
+      body,
+      pinned: false,
+      publish_at: schedule ? new Date(schedule).toISOString() : new Date().toISOString(),
+      target_role: target === "all" ? null : (target as UserRole),
+    };
+    setList([a, ...list]);
+    setTitle("");
+    if (bodyRef.current) bodyRef.current.innerHTML = "";
+    setSchedule("");
+    setPreview(false);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-5 lg:grid-cols-5">
+        <Card className="lg:col-span-3">
+          <CardTitle>New announcement</CardTitle>
+          <CardSubtitle>Target a role, schedule publish, preview before send.</CardSubtitle>
+
+          <div className="mt-4 space-y-4">
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Title"
+              className="w-full rounded-xl border border-[color:var(--color-border)] bg-white px-4 py-2.5 text-lg font-semibold"
+            />
+
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[color:var(--color-border)] bg-white px-2 py-1">
+              <FormatBtn label="B" onClick={() => exec("bold")} />
+              <FormatBtn label="I" onClick={() => exec("italic")} />
+              <FormatBtn label="U" onClick={() => exec("underline")} />
+              <FormatBtn label="• List" onClick={() => exec("insertUnorderedList")} />
+            </div>
+            <div
+              ref={bodyRef}
+              contentEditable
+              suppressContentEditableWarning
+              className="min-h-[180px] rounded-xl border border-[color:var(--color-border)] bg-white px-4 py-3 text-sm focus:outline-none focus:border-[color:var(--color-brand)]"
+            />
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label>
+                <span className="text-[12px] font-medium text-[color:var(--color-ink-soft)]">Target audience</span>
+                <select
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value as "all" | UserRole)}
+                  className="mt-1 w-full rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2"
+                >
+                  <option value="all">All users</option>
+                  <option value="franchisee">Franchisees</option>
+                  <option value="regional_manager">Regional managers</option>
+                  <option value="admin">Admins</option>
+                </select>
+              </label>
+              <label>
+                <span className="text-[12px] font-medium text-[color:var(--color-ink-soft)]">Publish at</span>
+                <input
+                  type="datetime-local"
+                  value={schedule}
+                  onChange={(e) => setSchedule(e.target.value)}
+                  className="mt-1 w-full rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2"
+                />
+              </label>
+            </div>
+
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setPreview((p) => !p)}>
+                <Eye size={16} /> {preview ? "Hide preview" : "Preview"}
+              </Button>
+              <Button onClick={publish}><Send size={16} /> Publish</Button>
+            </div>
+
+            {preview && (
+              <div className="rounded-xl border border-[color:var(--color-brand-200)] bg-[color:var(--color-brand-50)] p-4">
+                <div className="text-[11px] font-semibold uppercase text-[color:var(--color-brand-700)]">Preview</div>
+                <h3 className="mt-1 text-lg font-semibold">{title || "Untitled"}</h3>
+                <div className="prose prose-sm mt-2" dangerouslySetInnerHTML={{ __html: bodyRef.current?.innerHTML ?? "" }} />
+              </div>
+            )}
+          </div>
+        </Card>
+
+        <Card className="lg:col-span-2">
+          <CardTitle>Sent history</CardTitle>
+          <CardSubtitle>Mock open-rate tracking.</CardSubtitle>
+          <ul className="mt-3 space-y-2">
+            {list.map((a) => (
+              <li key={a.id} className="rounded-xl border border-[color:var(--color-border)] bg-white p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold">{a.title}</div>
+                    <div className="text-[11px] text-[color:var(--color-ink-soft)]">
+                      {formatDate(a.publish_at)} · {a.target_role ?? "all"}
+                    </div>
+                  </div>
+                  <Pill tone="brand">{50 + Math.floor(Math.random() * 45)}% opened</Pill>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function FormatBtn({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onMouseDown={(e) => { e.preventDefault(); onClick(); }}
+      className="rounded-lg px-2.5 py-1 text-[13px] font-semibold text-[color:var(--color-ink-soft)] hover:bg-[color:var(--color-brand-50)] hover:text-[color:var(--color-brand-700)]"
+    >
+      {label}
+    </button>
+  );
+}
