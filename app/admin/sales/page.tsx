@@ -42,12 +42,16 @@ export default function AdminSalesPage() {
   const [filterOutlet, setFilterOutlet] = useState<"all" | string>("all");
   const [localReports, setLocalReports] = useState<SalesReport[]>([]);
 
-  // Pull in any franchisee-submitted reports from localStorage on mount.
+  // Scan every `cc.sales-new.*` key so franchisee-submitted reports always
+  // surface, even if they were saved under a Supabase UUID from an older
+  // session that hasn't been migrated yet.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const gathered: SalesReport[] = [];
-    for (const o of mockOutlets) {
-      const raw = window.localStorage.getItem(SALES_KEY(o.id));
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (!k || !k.startsWith("cc.sales-new.")) continue;
+      const raw = window.localStorage.getItem(k);
       if (!raw) continue;
       try {
         gathered.push(...(JSON.parse(raw) as SalesReport[]));

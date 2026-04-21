@@ -30,26 +30,30 @@ export default function AdminRoyaltiesPage() {
   const [verifying, setVerifying] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null); // no-proof confirmation
 
-  // Load franchisee-uploaded proofs + HQ-confirmed payments from every outlet's
-  // localStorage bucket so both sides stay in sync across sessions.
+  // Scan every localStorage key under our prefixes — not just mock outlet ids —
+  // so proofs/payments stored under Supabase UUIDs from older sessions still
+  // appear to HQ. Belt-and-braces in case a franchisee hasn't triggered the
+  // client-side migration yet.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const mergedProofs: ProofsByRowId = {};
     const paidRows: PaidMap = {};
-    for (const o of mockOutlets) {
-      const rawProof = window.localStorage.getItem(PROOF_KEY(o.id));
-      if (rawProof) {
-        try { Object.assign(mergedProofs, JSON.parse(rawProof) as ProofsByRowId); }
-        catch { /* ignore */ }
-      }
-      const rawPaid = window.localStorage.getItem(PAID_KEY(o.id));
-      if (rawPaid) {
-        try { Object.assign(paidRows, JSON.parse(rawPaid) as PaidMap); }
-        catch { /* ignore */ }
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (!k) continue;
+      const raw = window.localStorage.getItem(k);
+      if (!raw) continue;
+      try {
+        if (k.startsWith("cc.royalty-proofs.")) {
+          Object.assign(mergedProofs, JSON.parse(raw) as ProofsByRowId);
+        } else if (k.startsWith("cc.royalty-paid.")) {
+          Object.assign(paidRows, JSON.parse(raw) as PaidMap);
+        }
+      } catch {
+        /* ignore malformed entries */
       }
     }
     setProofs(mergedProofs);
-    // Apply any HQ-confirmed payments to the seed rows.
     if (Object.keys(paidRows).length > 0) {
       setRows((prev) =>
         prev.map((r) =>

@@ -32,19 +32,21 @@ export default function AdminSuppliesPage() {
   const toast = useToast();
   const [orders, setOrders] = useState<SupplyOrder[]>(mockSupplyOrders);
 
-  // On mount, merge any franchisee-placed orders saved in localStorage
-  // (keyed by mock outlet id) so HQ can see + action them.
+  // Scan every `cc.supply-orders.*` key (mock ids AND leftover UUIDs) so
+  // franchisee orders always surface even if the per-portal migration hasn't
+  // run yet.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const franchiseeOrders: SupplyOrder[] = [];
-    for (const o of mockOutlets) {
-      const raw = window.localStorage.getItem(ORDERS_KEY(o.id));
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (!k || !k.startsWith("cc.supply-orders.")) continue;
+      const raw = window.localStorage.getItem(k);
       if (!raw) continue;
       try {
-        const parsed = JSON.parse(raw) as SupplyOrder[];
-        franchiseeOrders.push(...parsed);
+        franchiseeOrders.push(...(JSON.parse(raw) as SupplyOrder[]));
       } catch {
-        // ignore malformed entries
+        /* ignore */
       }
     }
     if (franchiseeOrders.length === 0) return;
