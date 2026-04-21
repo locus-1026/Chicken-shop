@@ -48,28 +48,31 @@ export default function PortalHome() {
 
       <Stagger className="grid gap-5 lg:grid-cols-3">
         <StaggerItem className="lg:col-span-2">
-          <Card>
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-center">
-              <div className="flex-1">
-                <CardTitle>This month's sales</CardTitle>
-                <CardSubtitle>
-                  {RM(outlet.monthly_actual)} of {RM(outlet.monthly_target)} target
-                </CardSubtitle>
-                <div className="mt-4 grid grid-cols-3 gap-3 text-center">
-                  <MiniStat label="Target" value={RM(outlet.monthly_target)} />
-                  <MiniStat label="Actual" value={RM(outlet.monthly_actual)} tone="brand" />
-                  <MiniStat label="Gap" value={RM(Math.abs(outlet.monthly_target - outlet.monthly_actual))} />
+          <Link href="/portal/sales" className="block">
+            <Card className="transition-all hover:-translate-y-0.5 hover:border-[color:var(--color-brand-200)] hover:shadow-[0_12px_28px_-14px_rgba(45,26,14,0.25)] cursor-pointer">
+              <div className="flex flex-col gap-6 lg:flex-row lg:items-center">
+                <div className="flex-1">
+                  <CardTitle>This month's sales</CardTitle>
+                  <CardSubtitle>
+                    {RM(outlet.monthly_actual)} of {RM(outlet.monthly_target)} target
+                  </CardSubtitle>
+                  <div className="mt-4 grid grid-cols-3 gap-3 text-center">
+                    <MiniStat label="Target" value={RM(outlet.monthly_target)} />
+                    <MiniStat label="Actual" value={RM(outlet.monthly_actual)} tone="brand" />
+                    <MiniStat label="Gap" value={RM(Math.abs(outlet.monthly_target - outlet.monthly_actual))} />
+                  </div>
+                </div>
+                <div className="w-full max-w-[260px]">
+                  <SalesDonut actual={outlet.monthly_actual} target={outlet.monthly_target} />
                 </div>
               </div>
-              <div className="w-full max-w-[260px]">
-                <SalesDonut actual={outlet.monthly_actual} target={outlet.monthly_target} />
-              </div>
-            </div>
-          </Card>
+            </Card>
+          </Link>
         </StaggerItem>
 
         <StaggerItem>
-          <Card>
+          <Link href="/portal/royalty" className="block">
+          <Card className="transition-all hover:-translate-y-0.5 hover:border-[color:var(--color-brand-200)] hover:shadow-[0_12px_28px_-14px_rgba(45,26,14,0.25)] cursor-pointer">
             <CardTitle>Royalty this month</CardTitle>
             {royalty ? (
               <>
@@ -102,6 +105,7 @@ export default function PortalHome() {
               </>
             )}
           </Card>
+          </Link>
         </StaggerItem>
       </Stagger>
 
@@ -150,7 +154,8 @@ export default function PortalHome() {
         </StaggerItem>
 
         <StaggerItem>
-          <Card>
+          <Link href="/portal/compliance" className="block">
+          <Card className="transition-all hover:-translate-y-0.5 hover:border-[color:var(--color-brand-200)] hover:shadow-[0_12px_28px_-14px_rgba(45,26,14,0.25)] cursor-pointer">
             <CardTitle>Last audit</CardTitle>
             {lastAudit ? (
               <>
@@ -175,9 +180,9 @@ export default function PortalHome() {
                     </div>
                   </div>
                 </div>
-                <Link href="/portal/compliance" className="mt-4 inline-block text-[13px] font-medium text-[color:var(--color-brand-700)]">
+                <span className="mt-4 inline-block text-[13px] font-medium text-[color:var(--color-brand-700)]">
                   View audit timeline →
-                </Link>
+                </span>
               </>
             ) : (
               <>
@@ -188,6 +193,7 @@ export default function PortalHome() {
               </>
             )}
           </Card>
+          </Link>
         </StaggerItem>
       </Stagger>
 

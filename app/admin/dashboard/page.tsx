@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
@@ -60,10 +61,10 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-6">
       <Stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi label="Monthly sales"       value={RM(totalSales)}                sub={`${Math.round((totalSales/totalTarget)*100)}% of RM ${totalTarget.toLocaleString()} target`} />
-        <Kpi label="Royalties collected" value={RM(totalRoyalties)}            sub="Last 3 months, settled" />
+        <Kpi href="/admin/franchisees" label="Monthly sales"       value={RM(totalSales)}                sub={`${Math.round((totalSales/totalTarget)*100)}% of RM ${totalTarget.toLocaleString()} target`} />
+        <Kpi href="/admin/royalties"   label="Royalties collected" value={RM(totalRoyalties)}            sub="Last 3 months, settled" />
         <ComplianceKpi score={avgAuditScore} />
-        <Kpi label="Training completion" value={`${trainingCompletion}%`}       sub="Across all users · target 90%" />
+        <Kpi href="/admin/training"    label="Training completion" value={`${trainingCompletion}%`}       sub="Across all users · target 90%" />
       </Stagger>
 
       <Card>
@@ -207,16 +208,15 @@ export default function AdminDashboard() {
   );
 }
 
-function Kpi({ label, value, sub }: { label: string; value: string; sub: string }) {
-  return (
-    <StaggerItem>
-      <Card>
-        <div className="text-[12px] font-medium text-[color:var(--color-ink-soft)]">{label}</div>
-        <div className="mt-2 text-[26px] font-semibold">{value}</div>
-        <div className="mt-1 text-[12px] text-[color:var(--color-ink-soft)]">{sub}</div>
-      </Card>
-    </StaggerItem>
+function Kpi({ label, value, sub, href }: { label: string; value: string; sub: string; href?: string }) {
+  const card = (
+    <Card className={href ? "transition-all hover:-translate-y-0.5 hover:border-[color:var(--color-brand-200)] hover:shadow-[0_12px_28px_-14px_rgba(45,26,14,0.25)] cursor-pointer" : ""}>
+      <div className="text-[12px] font-medium text-[color:var(--color-ink-soft)]">{label}</div>
+      <div className="mt-2 text-[26px] font-semibold">{value}</div>
+      <div className="mt-1 text-[12px] text-[color:var(--color-ink-soft)]">{sub}</div>
+    </Card>
   );
+  return <StaggerItem>{href ? <Link href={href} className="block">{card}</Link> : card}</StaggerItem>;
 }
 
 // Compliance band: ≥85 pass · 70-84 watch · <70 fail.
@@ -229,28 +229,30 @@ function ComplianceKpi({ score }: { score: number }) {
   const pct = Math.max(0, Math.min(100, rounded));
   return (
     <StaggerItem>
-      <Card>
-        <div className="flex items-center justify-between">
-          <div className="text-[12px] font-medium text-[color:var(--color-ink-soft)]">Compliance audit score</div>
-          <Pill tone={rounded >= 85 ? "success" : rounded >= 70 ? "warning" : "danger"}>{band.label}</Pill>
-        </div>
-        <div className={"mt-2 text-[26px] font-semibold " + band.tone}>
-          {rounded}<span className="text-sm font-normal text-[color:var(--color-ink-soft)]"> / 100</span>
-        </div>
-        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[color:var(--color-border)]">
-          <div
-            style={{ width: pct + "%" }}
-            className={
-              rounded >= 85 ? "h-full bg-[color:var(--color-success)]"
-              : rounded >= 70 ? "h-full bg-[color:var(--color-warning)]"
-              : "h-full bg-[color:var(--color-danger)]"
-            }
-          />
-        </div>
-        <div className="mt-2 text-[11px] text-[color:var(--color-ink-soft)]">
-          <b>≥85</b> pass · <b>70–84</b> watch · <b>&lt;70</b> risk flag
-        </div>
-      </Card>
+      <Link href="/admin/audits" className="block">
+        <Card className="transition-all hover:-translate-y-0.5 hover:border-[color:var(--color-brand-200)] hover:shadow-[0_12px_28px_-14px_rgba(45,26,14,0.25)] cursor-pointer">
+          <div className="flex items-center justify-between">
+            <div className="text-[12px] font-medium text-[color:var(--color-ink-soft)]">Compliance audit score</div>
+            <Pill tone={rounded >= 85 ? "success" : rounded >= 70 ? "warning" : "danger"}>{band.label}</Pill>
+          </div>
+          <div className={"mt-2 text-[26px] font-semibold " + band.tone}>
+            {rounded}<span className="text-sm font-normal text-[color:var(--color-ink-soft)]"> / 100</span>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[color:var(--color-border)]">
+            <div
+              style={{ width: pct + "%" }}
+              className={
+                rounded >= 85 ? "h-full bg-[color:var(--color-success)]"
+                : rounded >= 70 ? "h-full bg-[color:var(--color-warning)]"
+                : "h-full bg-[color:var(--color-danger)]"
+              }
+            />
+          </div>
+          <div className="mt-2 text-[11px] text-[color:var(--color-ink-soft)]">
+            <b>≥85</b> pass · <b>70–84</b> watch · <b>&lt;70</b> risk flag
+          </div>
+        </Card>
+      </Link>
     </StaggerItem>
   );
 }
