@@ -192,7 +192,12 @@ create policy "franchisee read own outlets" on public.outlets for select using (
   franchisee_id = (select franchisee_id from public.profiles where id = auth.uid())
 );
 create policy "regional read outlets" on public.outlets for select using (
-  state = any ((select assigned_states from public.profiles where id = auth.uid()))
+  exists (
+    select 1 from public.profiles p
+    where p.id = auth.uid()
+      and p.role = 'regional_manager'
+      and outlets.state = any(p.assigned_states)
+  )
 );
 
 -- Repeat select-own pattern for downstream tables
