@@ -6,7 +6,6 @@ import { useMemo, useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
-import { BackButton } from "@/components/ui/BackButton";
 import { ActionModal, type ActionKind } from "@/components/ui/ActionModal";
 import { useToast } from "@/components/ui/Toast";
 import { Sparkline } from "@/components/charts/Sparkline";
@@ -93,8 +92,6 @@ export default function FranchiseeDetailPage() {
 
   return (
     <div className="space-y-6">
-      <BackButton label="Back" fallbackHref="/admin/franchisees" />
-
       <Card
         className={
           tone === "success"
@@ -372,10 +369,6 @@ export default function FranchiseeDetailPage() {
             </div>
           </div>
         </Card>
-      </div>
-
-      <div className="flex justify-center pt-2">
-        <BackButton label="Back to previous page" fallbackHref="/admin/franchisees" />
       </div>
 
       {action && (

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
+import { BackButton } from "@/components/ui/BackButton";
 
 interface NavItem {
   href: string;
@@ -101,7 +102,14 @@ export function Shell({
           transition={{ duration: 0.24, ease: [0.2, 0.8, 0.2, 1] }}
           className="flex-1 px-5 pb-24 pt-5 lg:px-10 lg:pb-10 lg:pt-8"
         >
+          {/* Universal back button — lives above every page's content. */}
+          <div className="mb-4">
+            <BackButton label="Back" fallbackHref={pathname?.startsWith("/admin") ? "/admin/dashboard" : "/portal"} size="sm" />
+          </div>
           {children}
+          <div className="mt-8 flex justify-center">
+            <BackButton label="Back to previous page" fallbackHref={pathname?.startsWith("/admin") ? "/admin/dashboard" : "/portal"} />
+          </div>
         </motion.main>
       </div>
     </div>
