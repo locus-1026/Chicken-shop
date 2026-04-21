@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   GraduationCap,
   Megaphone,
+  Package,
   LogOut,
 } from "lucide-react";
 
@@ -20,6 +21,7 @@ const nav = [
   { href: "/admin/dashboard",     label: "War Room",     icon: <LayoutDashboard size={18} /> },
   { href: "/admin/franchisees",   label: "Franchisees",  icon: <Users size={18} /> },
   { href: "/admin/royalties",     label: "Royalties",    icon: <Receipt size={18} /> },
+  { href: "/admin/supplies",      label: "Supplies",     icon: <Package size={18} /> },
   { href: "/admin/audits",        label: "Audits",       icon: <ShieldCheck size={18} /> },
   { href: "/admin/training",      label: "Training",     icon: <GraduationCap size={18} /> },
   { href: "/admin/announcements", label: "Announcements", icon: <Megaphone size={18} /> },
