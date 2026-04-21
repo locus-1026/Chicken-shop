@@ -1,6 +1,11 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { Shell } from "@/components/layout/Shell";
+import { AdminAuthProvider, useAdminAuth } from "@/lib/admin-auth";
+import { Button } from "@/components/ui/Button";
+import { useToast } from "@/components/ui/Toast";
 import {
   LayoutDashboard,
   Users,
@@ -8,8 +13,8 @@ import {
   ShieldCheck,
   GraduationCap,
   Megaphone,
+  LogOut,
 } from "lucide-react";
-import { Pill } from "@/components/ui/Pill";
 
 const nav = [
   { href: "/admin/dashboard",     label: "War Room",     icon: <LayoutDashboard size={18} /> },
@@ -20,15 +25,66 @@ const nav = [
   { href: "/admin/announcements", label: "Announcements", icon: <Megaphone size={18} /> },
 ];
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+function Gate({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const { email, ready } = useAdminAuth();
+  const isLogin = pathname === "/admin/login";
+
+  useEffect(() => {
+    if (ready && !email && !isLogin) router.replace("/admin/login");
+  }, [ready, email, isLogin, router]);
+
+  if (isLogin) return <>{children}</>;
+
+  if (!ready) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[color:var(--color-background)]">
+        <div className="skeleton h-12 w-40" />
+      </div>
+    );
+  }
+  if (!email) return null;
+
+  return <AdminShell>{children}</AdminShell>;
+}
+
+function AdminShell({ children }: { children: React.ReactNode }) {
+  const { email, logout } = useAdminAuth();
+  const router = useRouter();
+  const toast = useToast();
+
+  const handleLogout = () => {
+    logout();
+    toast("info", "Signed out of HQ.");
+    router.replace("/admin/login");
+  };
+
   return (
     <Shell
       nav={nav}
       title="HQ Admin"
       subtitle="Coco Chick Sdn Bhd · 5 active outlets"
-      headerRight={<Pill tone="brand">admin@cocochick.com.my</Pill>}
+      headerRight={
+        <div className="flex items-center gap-2">
+          <span className="hidden md:inline-flex items-center gap-2 rounded-full border border-[color:var(--color-border)] bg-white px-3 py-1.5 text-[12px] font-medium">
+            {email}
+          </span>
+          <Button variant="outline" size="sm" onClick={handleLogout}>
+            <LogOut size={14} /> <span className="hidden sm:inline">Sign out</span>
+          </Button>
+        </div>
+      }
     >
       {children}
     </Shell>
+  );
+}
+
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <AdminAuthProvider>
+      <Gate>{children}</Gate>
+    </AdminAuthProvider>
   );
 }

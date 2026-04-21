@@ -29,7 +29,7 @@ export default function Home() {
           </Link>
 
           <Link
-            href="/admin/dashboard"
+            href="/admin/login"
             className="group rounded-[16px] border border-[color:var(--color-border)] bg-white p-6 text-left transition-all hover:-translate-y-1 hover:shadow-[0_12px_28px_-14px_rgba(45,26,14,0.25)]"
           >
             <div className="mb-2 inline-flex rounded-full bg-[color:#2D1A0E] px-3 py-1 text-xs font-semibold text-white">
