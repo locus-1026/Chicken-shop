@@ -3,7 +3,8 @@
 import { useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { Shell } from "@/components/layout/Shell";
-import { OutletProvider, useCurrentOutlet, useAuthGuard } from "@/lib/current-outlet";
+import { OutletProvider, useOutletState } from "@/lib/current-outlet";
+import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import {
@@ -32,41 +33,46 @@ const nav = [
   { href: "/portal/announcements", label: "News",       icon: <Megaphone size={18} /> },
 ];
 
-function AuthedShell({ children }: { children: React.ReactNode }) {
+function Gate({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { authenticated, ready } = useAuthGuard();
-  const isLoginRoute = pathname === "/portal/login";
+  const { session, profile, ready } = useAuth();
+  const isLogin = pathname === "/portal/login";
 
   useEffect(() => {
-    if (ready && !authenticated && !isLoginRoute) {
+    if (!ready) return;
+    if (!session && !isLogin) {
       router.replace("/portal/login");
+    } else if (session && profile && profile.role !== "franchisee" && !isLogin) {
+      // Admin or regional_manager shouldn't be in the franchisee portal.
+      router.replace(profile.role === "admin" ? "/admin/dashboard" : "/");
     }
-  }, [ready, authenticated, isLoginRoute, router]);
+  }, [ready, session, profile, isLogin, router]);
 
-  // Login route bypasses the shell entirely.
-  if (isLoginRoute) return <>{children}</>;
+  if (isLogin) return <>{children}</>;
+  if (!ready) return <CenteredSkeleton />;
+  if (!session || !profile || profile.role !== "franchisee") return null;
 
-  if (!ready) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[color:var(--color-background)]">
-        <div className="skeleton h-12 w-40" />
-      </div>
-    );
-  }
-  if (!authenticated) return null;
-
-  return <PortalShell>{children}</PortalShell>;
+  return (
+    <OutletProvider franchiseeId={profile.franchisee_id}>
+      <PortalShell>{children}</PortalShell>
+    </OutletProvider>
+  );
 }
 
 function PortalShell({ children }: { children: React.ReactNode }) {
-  const { outlet, franchisee, logout } = useCurrentOutlet();
+  const { outlet, franchisee, outlets, setOutletId } = useOutletState();
+  const { signOut } = useAuth();
   const router = useRouter();
   const toast = useToast();
 
-  const handleLogout = () => {
-    logout();
-    toast("info", "Signed out. See you soon!");
+  if (!outlet || !franchisee) {
+    return <CenteredSkeleton />;
+  }
+
+  const handleLogout = async () => {
+    await signOut();
+    toast("info", "Signed out.");
     router.replace("/portal/login");
   };
 
@@ -77,10 +83,22 @@ function PortalShell({ children }: { children: React.ReactNode }) {
       subtitle={`${outlet.outlet_code} · ${outlet.location}`}
       headerRight={
         <div className="flex items-center gap-2">
-          <span className="hidden sm:inline-flex items-center gap-2 rounded-full border border-[color:var(--color-border)] bg-white px-3 py-1.5 text-[12px] font-medium">
-            <Store size={14} className="text-[color:var(--color-brand)]" />
-            {outlet.outlet_code}
-          </span>
+          {outlets.length > 1 ? (
+            <select
+              value={outlet.id}
+              onChange={(e) => setOutletId(e.target.value)}
+              className="rounded-full border border-[color:var(--color-border)] bg-white px-3 py-1.5 text-[12px] font-medium"
+            >
+              {outlets.map((o) => (
+                <option key={o.id} value={o.id}>{o.outlet_code} · {o.state}</option>
+              ))}
+            </select>
+          ) : (
+            <span className="hidden sm:inline-flex items-center gap-2 rounded-full border border-[color:var(--color-border)] bg-white px-3 py-1.5 text-[12px] font-medium">
+              <Store size={14} className="text-[color:var(--color-brand)]" />
+              {outlet.outlet_code}
+            </span>
+          )}
           <Button variant="outline" size="sm" onClick={handleLogout}>
             <LogOut size={14} /> <span className="hidden sm:inline">Sign out</span>
           </Button>
@@ -92,10 +110,14 @@ function PortalShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function PortalLayout({ children }: { children: React.ReactNode }) {
+function CenteredSkeleton() {
   return (
-    <OutletProvider>
-      <AuthedShell>{children}</AuthedShell>
-    </OutletProvider>
+    <div className="flex min-h-screen items-center justify-center bg-[color:var(--color-background)]">
+      <div className="skeleton h-12 w-40" />
+    </div>
   );
+}
+
+export default function PortalLayout({ children }: { children: React.ReactNode }) {
+  return <Gate>{children}</Gate>;
 }

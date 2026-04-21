@@ -1,58 +1,80 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
-import { mockOutlets, mockFranchisees } from "./mock-data";
+import type { Franchisee, Outlet } from "./types";
+import { createSupabaseBrowserClient } from "./supabase/client";
 
 type Ctx = {
   outletId: string | null;
+  outlet: Outlet | null;
+  franchisee: Franchisee | null;
+  outlets: Outlet[];
   ready: boolean;
   setOutletId: (id: string) => void;
-  logout: () => void;
 };
 
 const OutletContext = createContext<Ctx | null>(null);
-const STORAGE_KEY = "cc.auth.outletId";
+const STORAGE_KEY = "cc.currentOutletId";
 
-export function OutletProvider({ children }: { children: React.ReactNode }) {
+export function OutletProvider({
+  franchiseeId,
+  children,
+}: {
+  franchiseeId: string | null;
+  children: React.ReactNode;
+}) {
+  const [outlets, setOutlets] = useState<Outlet[]>([]);
+  const [franchisee, setFranchisee] = useState<Franchisee | null>(null);
   const [outletId, setOutletIdState] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const saved = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
-    if (saved && mockOutlets.some((o) => o.id === saved)) setOutletIdState(saved);
-    setReady(true);
-  }, []);
+    if (!franchiseeId) { setReady(true); return; }
+    const supabase = createSupabaseBrowserClient();
+    (async () => {
+      const [{ data: fData }, { data: oData }] = await Promise.all([
+        supabase.from("franchisees").select("*").eq("id", franchiseeId).maybeSingle(),
+        supabase.from("outlets").select("*").eq("franchisee_id", franchiseeId).order("outlet_code"),
+      ]);
+      setFranchisee(fData as Franchisee | null);
+      const outletList = (oData ?? []) as Outlet[];
+      setOutlets(outletList);
+
+      const saved = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
+      const defaultId = saved && outletList.some((o) => o.id === saved) ? saved : outletList[0]?.id ?? null;
+      setOutletIdState(defaultId);
+      setReady(true);
+    })();
+  }, [franchiseeId]);
 
   const setOutletId = (id: string) => {
     setOutletIdState(id);
-    window.localStorage.setItem(STORAGE_KEY, id);
-    window.localStorage.setItem("cc.auth.loggedInAt", new Date().toISOString());
+    if (typeof window !== "undefined") window.localStorage.setItem(STORAGE_KEY, id);
   };
 
-  const logout = () => {
-    setOutletIdState(null);
-    window.localStorage.removeItem(STORAGE_KEY);
-    window.localStorage.removeItem("cc.auth.loggedInAt");
-  };
+  const outlet = outlets.find((o) => o.id === outletId) ?? null;
 
   return (
-    <OutletContext.Provider value={{ outletId, ready, setOutletId, logout }}>
+    <OutletContext.Provider value={{ outletId, outlet, franchisee, outlets, ready, setOutletId }}>
       {children}
     </OutletContext.Provider>
   );
 }
 
-/** Returns the authenticated outlet. Caller must ensure ready && outletId before use. */
+/** Inside the authed portal shell, outlet + franchisee are guaranteed non-null. */
 export function useCurrentOutlet() {
-  const ctx = useContext(OutletContext);
-  if (!ctx) throw new Error("useCurrentOutlet must be used inside OutletProvider");
-  const outlet = mockOutlets.find((o) => o.id === ctx.outletId) ?? mockOutlets[0];
-  const franchisee = mockFranchisees.find((f) => f.id === outlet.franchisee_id)!;
-  return { outlet, franchisee, outletId: ctx.outletId, ready: ctx.ready, setOutletId: ctx.setOutletId, logout: ctx.logout };
+  const c = useContext(OutletContext);
+  if (!c) throw new Error("useCurrentOutlet must be used inside OutletProvider");
+  return {
+    ...c,
+    outlet: c.outlet as Outlet,
+    franchisee: c.franchisee as Franchisee,
+  };
 }
 
-export function useAuthGuard() {
-  const ctx = useContext(OutletContext);
-  if (!ctx) throw new Error("useAuthGuard must be used inside OutletProvider");
-  return { authenticated: !!ctx.outletId, ready: ctx.ready, logout: ctx.logout };
+/** Raw hook — for the shell itself, which may render while loading. */
+export function useOutletState() {
+  const c = useContext(OutletContext);
+  if (!c) throw new Error("useOutletState must be used inside OutletProvider");
+  return c;
 }

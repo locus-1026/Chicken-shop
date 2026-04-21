@@ -6,156 +6,151 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
-import { useCurrentOutlet } from "@/lib/current-outlet";
-import { mockOutlets, mockFranchisees, outletPins } from "@/lib/mock-data";
-import { ArrowLeft, KeyRound, Lock, Store } from "lucide-react";
+import { useAuth } from "@/lib/auth";
+import { ArrowLeft, Lock, Mail, Store, Eye, EyeOff } from "lucide-react";
 
-function LoginInner() {
+const demoAccounts = [
+  { email: "lim@cocochick.my",    owner: "Lim Chee Keong", outlet: "CC-001 · PJ" },
+  { email: "priya@cocochick.my",  owner: "Priya Nair",     outlet: "CC-002 / CC-003" },
+  { email: "fadzli@cocochick.my", owner: "Ahmad Fadzli",   outlet: "CC-004 · JB" },
+  { email: "kevin@cocochick.my",  owner: "Kevin Ooi",      outlet: "CC-005 · Kuching" },
+];
+
+export default function LoginPage() {
   const router = useRouter();
   const toast = useToast();
-  const { outletId, ready, setOutletId } = useCurrentOutlet();
-  const [pickedId, setPickedId] = useState<string | null>(null);
-  const [pin, setPin] = useState("");
+  const { session, profile, ready, signIn } = useAuth();
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPwd, setShowPwd] = useState(false);
+  const [showDemo, setShowDemo] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [shake, setShake] = useState(0);
 
-  // If already logged in, bounce to portal home.
   useEffect(() => {
-    if (ready && outletId) router.replace("/portal");
-  }, [ready, outletId, router]);
+    if (ready && session && profile?.role === "franchisee") {
+      router.replace("/portal");
+    }
+  }, [ready, session, profile, router]);
 
-  const picked = pickedId ? mockOutlets.find((o) => o.id === pickedId)! : null;
-  const pickedFranchisee = picked ? mockFranchisees.find((f) => f.id === picked.franchisee_id)! : null;
-
-  const submit = () => {
-    if (!pickedId || !picked) return;
-    if (pin !== outletPins[pickedId]) {
-      setShake((s) => s + 1);
-      toast("error", "Wrong PIN. Try again.");
+  const submit = async () => {
+    if (!email.trim() || !password) {
+      toast("error", "Email and password required.");
       return;
     }
-    setOutletId(pickedId);
-    toast("success", `Welcome back, ${pickedFranchisee?.owner_name.split(" ")[0]}.`);
-    setTimeout(() => router.replace("/portal"), 400);
+    setBusy(true);
+    const { error } = await signIn(email.trim().toLowerCase(), password);
+    setBusy(false);
+    if (error) {
+      setShake((s) => s + 1);
+      toast("error", "Wrong email or password.");
+      return;
+    }
+    toast("success", "Welcome back!");
+    router.replace("/portal");
   };
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[color:var(--color-background)]">
-      {/* Ambient brand blobs */}
       <div className="pointer-events-none absolute -top-32 -left-32 h-96 w-96 rounded-full bg-[color:var(--color-brand-100)] blur-3xl opacity-70" />
       <div className="pointer-events-none absolute -bottom-40 -right-32 h-[28rem] w-[28rem] rounded-full bg-[color:var(--color-brand-200)] blur-3xl opacity-50" />
 
-      <div className="relative mx-auto flex min-h-screen max-w-5xl flex-col px-5 py-8 lg:py-14">
+      <div className="relative mx-auto flex min-h-screen max-w-md flex-col px-5 py-10">
         <Link href="/" className="inline-flex w-fit items-center gap-2 text-sm text-[color:var(--color-ink-soft)] hover:text-[color:var(--color-ink)]">
           <ArrowLeft size={16} /> Back
         </Link>
 
-        <div className="mt-6 flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[color:var(--color-brand)] text-white text-xl font-bold">C</div>
-          <div>
-            <h1 className="text-2xl font-semibold text-[color:var(--color-ink)]">Sign in to your outlet</h1>
-            <p className="text-[13px] text-[color:var(--color-ink-soft)]">Only staff from the selected outlet can access it.</p>
-          </div>
-        </div>
-
-        <div className="mt-8 grid flex-1 gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-          {/* Outlet picker */}
-          <section>
-            <div className="mb-2 text-[12px] font-semibold uppercase tracking-wider text-[color:var(--color-ink-soft)]">
-              Choose your outlet
+        <motion.div
+          key={shake}
+          animate={shake > 0 ? { x: [0, -10, 10, -8, 8, -4, 4, 0] } : {}}
+          transition={{ duration: 0.4 }}
+          className="mt-10 rounded-[20px] border border-[color:var(--color-border)] bg-white p-7 shadow-[0_12px_28px_-14px_rgba(45,26,14,0.15)]"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[color:var(--color-brand)] text-xl font-bold text-white">C</div>
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[color:var(--color-ink-soft)]">Outlet portal</div>
+              <h1 className="text-xl font-semibold text-[color:var(--color-ink)]">Sign in</h1>
             </div>
-            <ul className="space-y-2">
-              {mockOutlets.map((o, i) => {
-                const f = mockFranchisees.find((x) => x.id === o.franchisee_id)!;
-                const active = pickedId === o.id;
-                return (
-                  <motion.li
-                    key={o.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.06, duration: 0.3 }}
-                  >
-                    <button
-                      onClick={() => { setPickedId(o.id); setPin(""); }}
-                      className={
-                        "flex w-full items-center gap-4 rounded-[16px] border bg-white p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-14px_rgba(45,26,14,0.25)] " +
-                        (active
-                          ? "border-[color:var(--color-brand)] ring-2 ring-[color:var(--color-brand-200)]"
-                          : "border-[color:var(--color-border)]")
-                      }
-                    >
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[color:var(--color-brand-50)] text-[color:var(--color-brand-700)] text-lg font-bold">
-                        {o.outlet_code.slice(-1)}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold">{o.outlet_code}</span>
-                          {f.risk_flag && <span className="rounded-full bg-[color:var(--color-danger-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[color:var(--color-danger)]">AT RISK</span>}
-                        </div>
-                        <div className="truncate text-[13px] text-[color:var(--color-ink-soft)]">{o.location}</div>
-                        <div className="mt-0.5 text-[12px] text-[color:var(--color-ink-soft)]">Owner: <b className="text-[color:var(--color-ink)] font-medium">{f.owner_name}</b></div>
-                      </div>
-                      <Store size={18} className={active ? "text-[color:var(--color-brand)]" : "text-[color:var(--color-ink-soft)]"} />
-                    </button>
-                  </motion.li>
-                );
-              })}
-            </ul>
-          </section>
+          </div>
 
-          {/* PIN pad */}
-          <section>
-            <motion.div
-              key={shake}
-              initial={{ x: 0 }}
-              animate={shake > 0 ? { x: [0, -10, 10, -8, 8, -4, 4, 0] } : { x: 0 }}
-              transition={{ duration: 0.4 }}
-              className="sticky top-6 rounded-[20px] border border-[color:var(--color-border)] bg-white p-6 shadow-[0_12px_28px_-14px_rgba(45,26,14,0.15)]"
-            >
-              <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wider text-[color:var(--color-ink-soft)]">
-                <Lock size={14} /> Outlet PIN
+          <div className="mt-7 space-y-4">
+            <label className="block">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-[color:var(--color-ink-soft)]">Email</span>
+              <div className="mt-1 flex items-center gap-2 rounded-xl border border-[color:var(--color-border)] bg-white px-3">
+                <Mail size={16} className="text-[color:var(--color-ink-soft)]" />
+                <input
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
+                  placeholder="you@cocochick.my"
+                  className="w-full bg-transparent py-3 text-sm focus:outline-none"
+                />
               </div>
+            </label>
 
-              {picked ? (
-                <>
-                  <div className="mt-2">
-                    <div className="text-[18px] font-semibold">{picked.outlet_code}</div>
-                    <div className="text-[13px] text-[color:var(--color-ink-soft)]">{pickedFranchisee?.owner_name} · {picked.location}</div>
-                  </div>
+            <label className="block">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-[color:var(--color-ink-soft)]">Password</span>
+              <div className="mt-1 flex items-center gap-2 rounded-xl border border-[color:var(--color-border)] bg-white px-3">
+                <Lock size={16} className="text-[color:var(--color-ink-soft)]" />
+                <input
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && submit()}
+                  type={showPwd ? "text" : "password"}
+                  autoComplete="current-password"
+                  placeholder="••••••••"
+                  className="w-full bg-transparent py-3 text-sm focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPwd((v) => !v)}
+                  className="p-1 text-[color:var(--color-ink-soft)] hover:text-[color:var(--color-ink)]"
+                  aria-label={showPwd ? "Hide password" : "Show password"}
+                >
+                  {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </label>
 
-                  <input
-                    autoFocus
-                    inputMode="numeric"
-                    maxLength={4}
-                    value={pin}
-                    onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                    onKeyDown={(e) => e.key === "Enter" && submit()}
-                    placeholder="••••"
-                    className="mt-4 w-full rounded-xl border border-[color:var(--color-border)] bg-white px-4 py-4 text-center text-[28px] font-bold tracking-[0.6em] focus:border-[color:var(--color-brand)] focus:outline-none"
-                  />
+            <Button onClick={submit} size="lg" className="w-full" disabled={busy}>
+              {busy ? "Signing in…" : "Sign in"}
+            </Button>
 
-                  <Button onClick={submit} disabled={pin.length < 4} className="mt-4 w-full" size="lg">
-                    <KeyRound size={16} /> Sign in
-                  </Button>
+            <button
+              type="button"
+              onClick={() => setShowDemo((v) => !v)}
+              className="w-full text-center text-[12px] text-[color:var(--color-brand-700)] hover:underline"
+            >
+              {showDemo ? "Hide demo accounts" : "Show demo accounts"}
+            </button>
 
-                  <div className="mt-4 rounded-xl bg-[color:var(--color-brand-50)] px-3 py-2.5 text-[12px] text-[color:var(--color-brand-700)]">
-                    <b>Demo PIN:</b> {outletPins[picked.id]} &nbsp;—&nbsp; (each outlet has its own 4-digit code)
-                  </div>
-                </>
-              ) : (
-                <div className="mt-5 flex flex-col items-center justify-center rounded-2xl border border-dashed border-[color:var(--color-border)] bg-[color:var(--color-background)] py-10 text-center">
-                  <Store size={36} className="text-[color:var(--color-brand)]" />
-                  <p className="mt-3 text-sm font-medium">Pick an outlet on the left to continue.</p>
-                  <p className="mt-1 text-[12px] text-[color:var(--color-ink-soft)]">Each outlet has its own PIN.</p>
-                </div>
-              )}
-            </motion.div>
-          </section>
-        </div>
+            {showDemo && (
+              <div className="rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-brand-50)] px-3 py-2.5 text-[12px]">
+                <div className="mb-2 font-semibold text-[color:var(--color-brand-700)]">Password for all: <span className="font-mono">coco2024</span></div>
+                <ul className="space-y-1">
+                  {demoAccounts.map((a) => (
+                    <li key={a.email}>
+                      <button
+                        onClick={() => { setEmail(a.email); setPassword("coco2024"); }}
+                        className="w-full text-left rounded-lg px-2 py-1 hover:bg-white"
+                      >
+                        <span className="font-mono">{a.email}</span>
+                        <span className="text-[color:var(--color-ink-soft)]"> — {a.owner} ({a.outlet})</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <p className="text-center text-[11px] text-[color:var(--color-ink-soft)]">
+              <Store size={11} className="inline -mt-0.5" /> HQ staff? Sign in via <Link href="/admin/login" className="text-[color:var(--color-brand-700)] underline">admin war room</Link>
+            </p>
+          </div>
+        </motion.div>
       </div>
     </main>
   );
-}
-
-export default function LoginPage() {
-  return <LoginInner />;
 }
