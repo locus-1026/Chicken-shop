@@ -75,9 +75,10 @@ export default function AdminDashboard() {
         <Stagger className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {outletsWithStatus.map((x) => (
             <StaggerItem key={x.outlet.id}>
-              <div
+              <Link
+                href={`/admin/outlets/${x.outlet.outlet_code}`}
                 className={
-                  "rounded-[16px] border p-4 " +
+                  "block rounded-[16px] border p-4 transition-all hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-14px_rgba(45,26,14,0.25)] " +
                   (x.tone === "success"
                     ? "border-[color:var(--color-success)] bg-[color:var(--color-success-soft)]"
                     : x.tone === "warning"
@@ -105,7 +106,7 @@ export default function AdminDashboard() {
                     {x.audit ? `Audit ${x.audit.score}` : "No audit"}
                   </span>
                 </div>
-              </div>
+              </Link>
             </StaggerItem>
           ))}
         </Stagger>
