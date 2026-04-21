@@ -11,27 +11,45 @@ import { EmptyState } from "@/components/ui/EmptyState";
 
 export default function CompliancePage() {
   const { outlet } = useCurrentOutlet();
-  const [audits, setAudits] = useState(
-    mockAudits.filter((a) => a.outlet_id === outlet.id).sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1))
-  );
+  const storageKey = `cc.resolved.${outlet.id}`;
+
+  const loadResolved = (): Record<string, number[]> => {
+    if (typeof window === "undefined") return {};
+    try {
+      return JSON.parse(window.localStorage.getItem(storageKey) || "{}");
+    } catch {
+      return {};
+    }
+  };
+
+  const applyResolved = (resolved: Record<string, number[]>) =>
+    mockAudits
+      .filter((a) => a.outlet_id === outlet.id)
+      .map((a) => {
+        const idxs = resolved[a.id] ?? [];
+        return {
+          ...a,
+          checklist_items: a.checklist_items.map((c, i) =>
+            idxs.includes(i) ? { ...c, pass: true } : c
+          ),
+        };
+      })
+      .sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1));
+
+  const [audits, setAudits] = useState(applyResolved({}));
 
   useEffect(() => {
-    setAudits(
-      mockAudits.filter((a) => a.outlet_id === outlet.id).sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1))
-    );
+    setAudits(applyResolved(loadResolved()));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outlet.id]);
 
   const toggleItem = (auditId: string, idx: number) => {
-    setAudits((prev) =>
-      prev.map((a) =>
-        a.id !== auditId
-          ? a
-          : {
-              ...a,
-              checklist_items: a.checklist_items.map((c, i) => (i === idx ? { ...c, pass: !c.pass } : c)),
-            }
-      )
-    );
+    const current = loadResolved();
+    const list = current[auditId] ?? [];
+    const next = list.includes(idx) ? list.filter((x) => x !== idx) : [...list, idx];
+    const updated = { ...current, [auditId]: next };
+    window.localStorage.setItem(storageKey, JSON.stringify(updated));
+    setAudits(applyResolved(updated));
   };
 
   return (
