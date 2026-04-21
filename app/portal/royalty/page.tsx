@@ -22,21 +22,36 @@ export default function RoyaltyPage() {
   const [proofs, setProofs] = useState<ProofMap>({});
   const [activeRowId, setActiveRowId] = useState<string | null>(null);
 
+  // Use the mock outlet id as the localStorage key so admin + portal agree.
+  const mockOutletId = resolveMockOutletId(outlet);
+
   // Load persisted proofs for this outlet so refreshes keep the paper trail.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const raw = window.localStorage.getItem(PROOF_KEY(outlet.id));
-    setProofs(raw ? JSON.parse(raw) : {});
-  }, [outlet.id]);
+    // One-time migration: if proofs were saved under the real UUID, copy them
+    // over to the mock-id key so the admin can see them.
+    const legacy = window.localStorage.getItem(PROOF_KEY(outlet.id));
+    const current = window.localStorage.getItem(PROOF_KEY(mockOutletId));
+    if (legacy && outlet.id !== mockOutletId) {
+      try {
+        const merged = { ...(current ? JSON.parse(current) : {}), ...JSON.parse(legacy) };
+        window.localStorage.setItem(PROOF_KEY(mockOutletId), JSON.stringify(merged));
+        window.localStorage.removeItem(PROOF_KEY(outlet.id));
+        setProofs(merged);
+        return;
+      } catch {
+        // fall through to normal load
+      }
+    }
+    setProofs(current ? JSON.parse(current) : {});
+  }, [outlet.id, mockOutletId]);
 
   const persist = (next: ProofMap) => {
     setProofs(next);
     if (typeof window !== "undefined") {
-      window.localStorage.setItem(PROOF_KEY(outlet.id), JSON.stringify(next));
+      window.localStorage.setItem(PROOF_KEY(mockOutletId), JSON.stringify(next));
     }
   };
-
-  const mockOutletId = resolveMockOutletId(outlet);
 
   const rows = useMemo(
     () => mockRoyalties
