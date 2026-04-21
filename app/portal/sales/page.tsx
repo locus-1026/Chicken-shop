@@ -10,7 +10,7 @@ import { mockSalesReports } from "@/lib/mock-data";
 import { useCurrentOutlet } from "@/lib/current-outlet";
 import { useToast } from "@/components/ui/Toast";
 import { RM, formatDate } from "@/lib/utils";
-import { Utensils, ShoppingBag, Bike, Coffee } from "lucide-react";
+import { Utensils, ShoppingBag, Bike, Coffee, Zap, RotateCcw, Copy, Sparkles } from "lucide-react";
 
 type ChannelMix = { dine_in: number; takeaway: number; delivery: number };
 
@@ -117,12 +117,82 @@ export default function SalesPage() {
 
   const weekTotal = reports.slice(0, 7).reduce((s, r) => s + r.gross_sales, 0);
 
+  // Simulated POS sync — fills everything from what the POS would have captured.
+  // In production this would hit the real POS endpoint; the UX is the important bit.
+  const syncFromPos = () => {
+    const base = outlet.monthly_target / 30;
+    const factor = 0.85 + Math.random() * 0.35; // realistic daily variance
+    const g = Math.round(base * factor);
+    const avgTicket = 35 + Math.round(Math.random() * 15);
+    setGross(String(g));
+    setTransactions(String(Math.max(1, Math.round(g / avgTicket))));
+    setDineIn(45); setTakeaway(35); setDelivery(20);
+    setBeveragePct(14);
+    toast("success", "Synced from POS. Double-check the numbers before submitting.");
+  };
+
+  // Copy yesterday — use the most recent prior report as the starting point.
+  const copyYesterday = () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const prev = reports.find((r) => r.report_date !== today);
+    if (!prev) {
+      toast("error", "No previous report yet for this outlet.");
+      return;
+    }
+    setGross(String(prev.gross_sales));
+    setTransactions(String(prev.transactions));
+    if (prev.channel_mix) {
+      setDineIn(prev.channel_mix.dine_in);
+      setTakeaway(prev.channel_mix.takeaway);
+      setDelivery(prev.channel_mix.delivery);
+    }
+    if (prev.beverage_pct !== undefined) setBeveragePct(prev.beverage_pct);
+    toast("info", `Pulled ${formatDate(prev.report_date)} — tweak and submit.`);
+  };
+
+  // Apply the 7-day average mix only, so user still enters today's gross+txn.
+  const applyAverageMix = () => {
+    if (!mixAvg) {
+      toast("error", "Not enough mix history yet. Log a couple of days first.");
+      return;
+    }
+    setDineIn(mixAvg.dine_in);
+    setTakeaway(mixAvg.takeaway);
+    setDelivery(mixAvg.delivery);
+    setBeveragePct(mixAvg.beverage);
+    toast("info", "Applied your 30-day average mix.");
+  };
+
+  const resetForm = () => {
+    setGross(""); setTransactions("");
+    setDineIn(45); setTakeaway(35); setDelivery(20); setBeveragePct(15);
+    setMessage(null);
+  };
+
   return (
     <div className="space-y-6">
       <div className="grid gap-5 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardTitle>Log today's sales</CardTitle>
           <CardSubtitle>Submit before you close up. One entry per day.</CardSubtitle>
+
+          <div className="mt-4 flex flex-wrap gap-2 rounded-xl border border-[color:var(--color-brand-200)] bg-[color:var(--color-brand-50)]/60 p-3">
+            <div className="mr-auto inline-flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wider text-[color:var(--color-brand-700)]">
+              <Sparkles size={12} /> Quick fill
+            </div>
+            <Button size="sm" onClick={syncFromPos}>
+              <Zap size={12} /> Sync from POS
+            </Button>
+            <Button size="sm" variant="outline" onClick={copyYesterday}>
+              <Copy size={12} /> Copy yesterday
+            </Button>
+            <Button size="sm" variant="outline" onClick={applyAverageMix} disabled={!mixAvg}>
+              <Sparkles size={12} /> Use 30-day mix
+            </Button>
+            <Button size="sm" variant="ghost" onClick={resetForm}>
+              <RotateCcw size={12} /> Reset
+            </Button>
+          </div>
 
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
             <label className="block">
