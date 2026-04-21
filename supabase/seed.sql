@@ -3,10 +3,10 @@
 
 -- Franchisees
 insert into public.franchisees (id, business_name, owner_name, ic_number, contact, email, agreement_start, agreement_end, status) values
-  ('11111111-1111-1111-1111-111111111101', 'Lim F&B Enterprise', 'Lim Chee Keong', '750812-10-5533', '+6012-345 6781', 'lim@cocochick.my', '2021-01-10', '2027-01-09', 'active'),
-  ('11111111-1111-1111-1111-111111111102', 'Nair Hospitality Sdn Bhd', 'Priya Nair', '820315-14-4421', '+6013-222 1188', 'priya@cocochick.my', '2021-06-01', '2026-05-31', 'active'),
-  ('11111111-1111-1111-1111-111111111103', 'Fadzli Ventures', 'Ahmad Fadzli', '880922-01-6677', '+6019-667 3322', 'fadzli@cocochick.my', '2023-09-15', '2026-09-14', 'active'),
-  ('11111111-1111-1111-1111-111111111104', 'KO Hospitality Trading', 'Kevin Ooi', '910204-13-2211', '+6016-889 7744', 'kevin@cocochick.my', '2024-02-10', '2027-02-09', 'active');
+  ('11111111-1111-1111-1111-111111111101', 'Coco Chick PJ Sdn Bhd', 'Lim Chee Keong', '750812-10-5533', '+6012-345 6781', 'lim@cocochick.my', '2021-01-10', '2027-01-09', 'active'),
+  ('11111111-1111-1111-1111-111111111102', 'Coco Chick Central Sdn Bhd', 'Priya Nair', '820315-14-4421', '+6013-222 1188', 'priya@cocochick.my', '2021-06-01', '2026-05-31', 'active'),
+  ('11111111-1111-1111-1111-111111111103', 'Coco Chick Johor Sdn Bhd', 'Ahmad Fadzli', '880922-01-6677', '+6019-667 3322', 'fadzli@cocochick.my', '2023-09-15', '2026-09-14', 'active'),
+  ('11111111-1111-1111-1111-111111111104', 'Coco Chick Borneo Sdn Bhd', 'Kevin Ooi', '910204-13-2211', '+6016-889 7744', 'kevin@cocochick.my', '2024-02-10', '2027-02-09', 'active');
 
 -- Outlets
 insert into public.outlets (id, franchisee_id, outlet_code, location, state, opening_date, monthly_target, monthly_actual) values

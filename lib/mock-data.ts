@@ -17,7 +17,7 @@ import type {
 export const mockFranchisees: Franchisee[] = [
   {
     id: "f-1",
-    business_name: "Lim F&B Enterprise",
+    business_name: "Coco Chick PJ Sdn Bhd",
     owner_name: "Lim Chee Keong",
     ic_number: "750812-10-5533",
     contact: "+6012-345 6781",
@@ -29,7 +29,7 @@ export const mockFranchisees: Franchisee[] = [
   },
   {
     id: "f-2",
-    business_name: "Nair Hospitality Sdn Bhd",
+    business_name: "Coco Chick Central Sdn Bhd",
     owner_name: "Priya Nair",
     ic_number: "820315-14-4421",
     contact: "+6013-222 1188",
@@ -41,7 +41,7 @@ export const mockFranchisees: Franchisee[] = [
   },
   {
     id: "f-3",
-    business_name: "Fadzli Ventures",
+    business_name: "Coco Chick Johor Sdn Bhd",
     owner_name: "Ahmad Fadzli",
     ic_number: "880922-01-6677",
     contact: "+6019-667 3322",
@@ -53,7 +53,7 @@ export const mockFranchisees: Franchisee[] = [
   },
   {
     id: "f-4",
-    business_name: "KO Hospitality Trading",
+    business_name: "Coco Chick Borneo Sdn Bhd",
     owner_name: "Kevin Ooi",
     ic_number: "910204-13-2211",
     contact: "+6016-889 7744",
