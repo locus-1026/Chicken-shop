@@ -42,7 +42,11 @@ export interface Royalty {
   marketing_fee: number;
   due_date: string;
   paid_at: string | null;
-  status: "pending" | "paid" | "overdue";
+  // "submitted" = franchisee uploaded a payment slip, HQ not yet confirmed.
+  status: "pending" | "submitted" | "paid" | "overdue";
+  payment_proof_url?: string | null;
+  payment_reference?: string | null;
+  submitted_at?: string | null;
 }
 
 export interface SalesReport {
@@ -52,6 +56,10 @@ export interface SalesReport {
   gross_sales: number;
   transactions: number;
   notes: string | null;
+  // Channel and category split — % shares, 0..100. Total of channel_mix sums to 100.
+  channel_mix?: { dine_in: number; takeaway: number; delivery: number };
+  // Beverage share — food = 100 - beverage.
+  beverage_pct?: number;
 }
 
 export interface TrainingModule {
@@ -103,6 +111,34 @@ export interface SupportTicket {
   photo_url: string | null;
   status: "open" | "in_progress" | "resolved";
   created_at: string;
+}
+
+export interface TicketMessage {
+  id: string;
+  ticket_id: string;
+  author: "franchisee" | "hq";
+  author_name: string;
+  body: string;
+  created_at: string;
+}
+
+export interface SupplyOrderItem {
+  sku: string;
+  name: string;
+  unit: string;
+  qty: number;
+  unit_price: number;
+}
+
+export interface SupplyOrder {
+  id: string;
+  outlet_id: string;
+  submitted_at: string;
+  status: "submitted" | "confirmed" | "shipped" | "delivered" | "cancelled";
+  items: SupplyOrderItem[];
+  total: number;
+  delivered_at?: string | null;
+  tracking_note?: string | null;
 }
 
 export interface Announcement {

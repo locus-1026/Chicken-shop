@@ -9,7 +9,9 @@ import type {
   Outlet,
   Royalty,
   SalesReport,
+  SupplyOrder,
   SupportTicket,
+  TicketMessage,
   TrainingModule,
   TrainingProgress,
 } from "./types";
@@ -176,3 +178,64 @@ export const outletPins: Record<string, string> = {
   "o-4": "1004",
   "o-5": "1005",
 };
+
+// Threaded replies on support tickets.
+const d = (n: number) => new Date(Date.now() - n * 3600_000).toISOString();
+export const mockTicketMessages: TicketMessage[] = [
+  { id: "tm-1",  ticket_id: "tk-1", author: "franchisee", author_name: "Lim Chee Keong", body: "Paper keeps jamming from 12:30 onwards. Tried reseating the roll — no luck.", created_at: d(48) },
+  { id: "tm-2",  ticket_id: "tk-1", author: "hq",         author_name: "HQ Support — Mei",   body: "Sorry for the pain. A tech will call within 2 hours. In the meantime, can you try cleaning the thermal head with isopropyl? Guide: hq.link/printer-clean", created_at: d(46) },
+  { id: "tm-3",  ticket_id: "tk-1", author: "franchisee", author_name: "Lim Chee Keong", body: "Cleaned — still jamming. Staff on standby for the tech call.", created_at: d(40) },
+  { id: "tm-4",  ticket_id: "tk-1", author: "hq",         author_name: "HQ Support — Mei",   body: "Tech en route — ETA 45 mins. Replacement printer dispatched as backup.", created_at: d(38) },
+  { id: "tm-5",  ticket_id: "tk-2", author: "franchisee", author_name: "Lim Chee Keong", body: "Need 10 more tubs of chilli paste by Friday — weekend promo incoming.", created_at: d(24) },
+  { id: "tm-6",  ticket_id: "tk-2", author: "hq",         author_name: "HQ Supply — Fazli",  body: "Added 10 tubs to your next delivery run (Thurs AM). No extra charge since it's within the monthly quota.", created_at: d(20) },
+  { id: "tm-7",  ticket_id: "tk-3", author: "franchisee", author_name: "Lim Chee Keong", body: "Haven't received the Mother's Day posters. Campaign starts Monday.", created_at: d(144) },
+  { id: "tm-8",  ticket_id: "tk-3", author: "hq",         author_name: "HQ Marketing — Sara", body: "Courier re-dispatched. Tracking: MY838124XX. Also sharing the print-ready PDF if you want to print locally as a fallback.", created_at: d(140) },
+  { id: "tm-9",  ticket_id: "tk-3", author: "franchisee", author_name: "Lim Chee Keong", body: "Received, thanks!", created_at: d(100) },
+  { id: "tm-10", ticket_id: "tk-3", author: "hq",         author_name: "HQ Marketing — Sara", body: "Glad it landed. Closing this ticket — reopen anytime.", created_at: d(96) },
+];
+
+export const mockSupplyOrders: SupplyOrder[] = [
+  {
+    id: "so-1", outlet_id: "o-1", submitted_at: new Date(Date.now() - 21 * 864e5).toISOString(), status: "delivered",
+    delivered_at: new Date(Date.now() - 18 * 864e5).toISOString(), tracking_note: "Delivered by KTM Logistics — signed by En. Lim.",
+    items: [
+      { sku: "chilli",      name: "Signature chilli paste", unit: "1kg tub",  qty: 8, unit_price: 28 },
+      { sku: "rice",        name: "Premium jasmine rice",   unit: "10kg bag", qty: 4, unit_price: 95 },
+      { sku: "box-regular", name: "Takeaway box (regular)", unit: "100 pcs",  qty: 3, unit_price: 42 },
+    ],
+    total: 8 * 28 + 4 * 95 + 3 * 42,
+  },
+  {
+    id: "so-2", outlet_id: "o-1", submitted_at: new Date(Date.now() - 7 * 864e5).toISOString(), status: "shipped",
+    tracking_note: "In transit — ETA tomorrow afternoon.",
+    items: [
+      { sku: "ginger",  name: "Ginger-scallion oil", unit: "500ml", qty: 6, unit_price: 22 },
+      { sku: "soy",     name: "Dark soy reduction",  unit: "1L",    qty: 4, unit_price: 18 },
+    ],
+    total: 6 * 22 + 4 * 18,
+  },
+  {
+    id: "so-3", outlet_id: "o-1", submitted_at: new Date(Date.now() - 2 * 864e5).toISOString(), status: "confirmed",
+    items: [
+      { sku: "uniform",    name: "Staff uniform polo",      unit: "1 pc",    qty: 4, unit_price: 55 },
+      { sku: "box-family", name: "Takeaway box (family)",   unit: "50 pcs",  qty: 2, unit_price: 38 },
+    ],
+    total: 4 * 55 + 2 * 38,
+  },
+  {
+    id: "so-4", outlet_id: "o-2", submitted_at: new Date(Date.now() - 5 * 864e5).toISOString(), status: "delivered",
+    delivered_at: new Date(Date.now() - 3 * 864e5).toISOString(),
+    items: [
+      { sku: "chilli", name: "Signature chilli paste", unit: "1kg tub", qty: 5, unit_price: 28 },
+    ],
+    total: 5 * 28,
+  },
+  {
+    id: "so-5", outlet_id: "o-3", submitted_at: new Date(Date.now() - 3 * 864e5).toISOString(), status: "submitted",
+    items: [
+      { sku: "rice",   name: "Premium jasmine rice", unit: "10kg bag", qty: 3, unit_price: 95 },
+      { sku: "pandan", name: "Pandan essence",       unit: "250ml",    qty: 2, unit_price: 14 },
+    ],
+    total: 3 * 95 + 2 * 14,
+  },
+];
