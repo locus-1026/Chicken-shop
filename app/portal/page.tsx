@@ -6,20 +6,13 @@ import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
 import { Stagger, StaggerItem } from "@/components/ui/Stagger";
 import { SalesDonut } from "@/components/charts/SalesDonut";
-import {
-  DEMO_FRANCHISEE_ID,
-  DEMO_OUTLET_ID,
-  mockFranchisees,
-  mockOutlets,
-  mockRoyalties,
-  mockAudits,
-} from "@/lib/mock-data";
+import { mockRoyalties, mockAudits } from "@/lib/mock-data";
+import { useCurrentOutlet } from "@/lib/current-outlet";
 import { RM, RM2, daysUntil, formatDate } from "@/lib/utils";
 import { Receipt, GraduationCap, ShoppingBasket, LifeBuoy, AlertTriangle, Check, Clock } from "lucide-react";
 
 export default function PortalHome() {
-  const franchisee = mockFranchisees.find((x) => x.id === DEMO_FRANCHISEE_ID)!;
-  const outlet = mockOutlets.find((x) => x.id === DEMO_OUTLET_ID)!;
+  const { outlet, franchisee } = useCurrentOutlet();
   const royalty = mockRoyalties
     .filter((r) => r.outlet_id === outlet.id)
     .sort((a, b) => (a.period < b.period ? 1 : -1))[0];
@@ -137,30 +130,41 @@ export default function PortalHome() {
         <StaggerItem>
           <Card>
             <CardTitle>Last audit</CardTitle>
-            <CardSubtitle>{formatDate(lastAudit.audit_date)}</CardSubtitle>
-            <div className="mt-4 flex items-center gap-4">
-              <div
-                className={
-                  "flex h-20 w-20 items-center justify-center rounded-full text-2xl font-semibold " +
-                  (lastAudit.score >= 85
-                    ? "bg-[color:var(--color-success-soft)] text-[color:var(--color-success)]"
-                    : lastAudit.score >= 70
-                    ? "bg-[color:var(--color-warning-soft)] text-[color:var(--color-warning)]"
-                    : "bg-[color:var(--color-danger-soft)] text-[color:var(--color-danger)]")
-                }
-              >
-                {lastAudit.score}
-              </div>
-              <div className="flex-1 text-sm">
-                <div className="font-medium">{lastAudit.auditor}</div>
-                <div className="text-[color:var(--color-ink-soft)]">
-                  {lastAudit.checklist_items.filter((c) => !c.pass).length} item(s) failed
+            {lastAudit ? (
+              <>
+                <CardSubtitle>{formatDate(lastAudit.audit_date)}</CardSubtitle>
+                <div className="mt-4 flex items-center gap-4">
+                  <div
+                    className={
+                      "flex h-20 w-20 items-center justify-center rounded-full text-2xl font-semibold " +
+                      (lastAudit.score >= 85
+                        ? "bg-[color:var(--color-success-soft)] text-[color:var(--color-success)]"
+                        : lastAudit.score >= 70
+                        ? "bg-[color:var(--color-warning-soft)] text-[color:var(--color-warning)]"
+                        : "bg-[color:var(--color-danger-soft)] text-[color:var(--color-danger)]")
+                    }
+                  >
+                    {lastAudit.score}
+                  </div>
+                  <div className="flex-1 text-sm">
+                    <div className="font-medium">{lastAudit.auditor}</div>
+                    <div className="text-[color:var(--color-ink-soft)]">
+                      {lastAudit.checklist_items.filter((c) => !c.pass).length} item(s) failed
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-            <Link href="/portal/compliance" className="mt-4 inline-block text-[13px] font-medium text-[color:var(--color-brand-700)]">
-              View audit timeline →
-            </Link>
+                <Link href="/portal/compliance" className="mt-4 inline-block text-[13px] font-medium text-[color:var(--color-brand-700)]">
+                  View audit timeline →
+                </Link>
+              </>
+            ) : (
+              <>
+                <CardSubtitle>No audits yet for this outlet.</CardSubtitle>
+                <div className="mt-4 rounded-xl bg-[color:var(--color-brand-50)] px-4 py-6 text-center text-[13px] text-[color:var(--color-brand-700)]">
+                  HQ will schedule your first audit within 30 days of opening.
+                </div>
+              </>
+            )}
           </Card>
         </StaggerItem>
       </Stagger>

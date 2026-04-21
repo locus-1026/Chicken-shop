@@ -1,6 +1,8 @@
 "use client";
 
 import { Shell } from "@/components/layout/Shell";
+import { OutletSwitcher } from "@/components/layout/OutletSwitcher";
+import { OutletProvider, useCurrentOutlet } from "@/lib/current-outlet";
 import {
   LayoutDashboard,
   Receipt,
@@ -10,7 +12,6 @@ import {
   Image as ImageIcon,
   LifeBuoy,
 } from "lucide-react";
-import { mockFranchisees, mockOutlets, DEMO_FRANCHISEE_ID } from "@/lib/mock-data";
 
 const nav = [
   { href: "/portal",               label: "Home",       icon: <LayoutDashboard size={18} /> },
@@ -22,21 +23,24 @@ const nav = [
   { href: "/portal/announcements", label: "News",       icon: <Megaphone size={18} /> },
 ];
 
-export default function PortalLayout({ children }: { children: React.ReactNode }) {
-  const f = mockFranchisees.find((x) => x.id === DEMO_FRANCHISEE_ID)!;
-  const o = mockOutlets.find((x) => x.franchisee_id === DEMO_FRANCHISEE_ID)!;
+function PortalShell({ children }: { children: React.ReactNode }) {
+  const { outlet, franchisee } = useCurrentOutlet();
   return (
     <Shell
       nav={nav}
-      title={`Hi, ${f.owner_name.split(" ")[0]} 👋`}
-      subtitle={`${o.outlet_code} · ${o.location}`}
-      headerRight={
-        <div className="hidden sm:flex items-center gap-2 rounded-full bg-[color:var(--color-brand-50)] px-3 py-1.5 text-[12px] font-medium text-[color:var(--color-brand-700)]">
-          {f.business_name}
-        </div>
-      }
+      title={`Hi, ${franchisee.owner_name.split(" ")[0]} 👋`}
+      subtitle={`${outlet.outlet_code} · ${outlet.location}`}
+      headerRight={<OutletSwitcher />}
     >
       {children}
     </Shell>
+  );
+}
+
+export default function PortalLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <OutletProvider>
+      <PortalShell>{children}</PortalShell>
+    </OutletProvider>
   );
 }

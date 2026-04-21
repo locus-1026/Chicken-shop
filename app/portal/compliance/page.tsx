@@ -1,16 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
-import { DEMO_OUTLET_ID, mockAudits } from "@/lib/mock-data";
+import { mockAudits } from "@/lib/mock-data";
+import { useCurrentOutlet } from "@/lib/current-outlet";
 import { formatDate } from "@/lib/utils";
 import { Check, X } from "lucide-react";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 export default function CompliancePage() {
+  const { outlet } = useCurrentOutlet();
   const [audits, setAudits] = useState(
-    mockAudits.filter((a) => a.outlet_id === DEMO_OUTLET_ID).sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1))
+    mockAudits.filter((a) => a.outlet_id === outlet.id).sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1))
   );
+
+  useEffect(() => {
+    setAudits(
+      mockAudits.filter((a) => a.outlet_id === outlet.id).sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1))
+    );
+  }, [outlet.id]);
 
   const toggleItem = (auditId: string, idx: number) => {
     setAudits((prev) =>
@@ -31,6 +40,12 @@ export default function CompliancePage() {
         <CardTitle>Compliance timeline</CardTitle>
         <CardSubtitle>Every audit, every finding. Tick off resolved items as you fix them.</CardSubtitle>
       </Card>
+
+      {audits.length === 0 && (
+        <Card>
+          <EmptyState title="No audits yet" description="This outlet hasn't been audited. HQ will schedule the first visit within 30 days of opening." />
+        </Card>
+      )}
 
       <div className="relative space-y-6 pl-6">
         <div className="absolute left-2 top-2 bottom-2 w-0.5 bg-[color:var(--color-brand-100)]" />

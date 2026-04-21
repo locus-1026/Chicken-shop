@@ -1,21 +1,30 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardTitle, CardSubtitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { Sparkline } from "@/components/charts/Sparkline";
 import { fireConfetti } from "@/components/ui/Confetti";
-import { DEMO_OUTLET_ID, mockSalesReports } from "@/lib/mock-data";
+import { mockSalesReports } from "@/lib/mock-data";
+import { useCurrentOutlet } from "@/lib/current-outlet";
 import { RM, formatDate } from "@/lib/utils";
 
 export default function SalesPage() {
+  const { outlet } = useCurrentOutlet();
   const [reports, setReports] = useState(
-    mockSalesReports.filter((s) => s.outlet_id === DEMO_OUTLET_ID).sort((a, b) => (a.report_date < b.report_date ? 1 : -1))
+    mockSalesReports.filter((s) => s.outlet_id === outlet.id).sort((a, b) => (a.report_date < b.report_date ? 1 : -1))
   );
   const [gross, setGross] = useState("");
   const [transactions, setTransactions] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setReports(
+      mockSalesReports.filter((s) => s.outlet_id === outlet.id).sort((a, b) => (a.report_date < b.report_date ? 1 : -1))
+    );
+    setMessage(null);
+  }, [outlet.id]);
 
   const avg = useMemo(
     () => reports.slice(0, 30).reduce((s, r) => s + r.gross_sales, 0) / Math.max(1, reports.length),
@@ -33,7 +42,7 @@ export default function SalesPage() {
     const today = new Date().toISOString().slice(0, 10);
     const newReport = {
       id: "s-new-" + Date.now(),
-      outlet_id: DEMO_OUTLET_ID,
+      outlet_id: outlet.id,
       report_date: today,
       gross_sales: g,
       transactions: Number(transactions) || 0,

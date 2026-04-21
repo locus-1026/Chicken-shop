@@ -5,6 +5,7 @@ import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { mockTickets } from "@/lib/mock-data";
+import { useCurrentOutlet } from "@/lib/current-outlet";
 import { formatDate } from "@/lib/utils";
 import type { SupportTicket } from "@/lib/types";
 import { Paperclip } from "lucide-react";
@@ -12,6 +13,7 @@ import { Paperclip } from "lucide-react";
 const categories = ["IT / POS", "Supply Chain", "Marketing", "HR / Staffing", "Facility", "Other"];
 
 export default function SupportPage() {
+  const { outlet } = useCurrentOutlet();
   const [tickets, setTickets] = useState<SupportTicket[]>(mockTickets);
   const [form, setForm] = useState({ category: categories[0], subject: "", description: "" });
 
@@ -19,7 +21,7 @@ export default function SupportPage() {
     if (!form.subject.trim() || !form.description.trim()) return;
     const t: SupportTicket = {
       id: "tk-new-" + Date.now(),
-      outlet_id: "o-1",
+      outlet_id: outlet.id,
       category: form.category,
       subject: form.subject,
       description: form.description,
