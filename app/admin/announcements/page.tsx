@@ -5,7 +5,7 @@ import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { formatDate } from "@/lib/utils";
-import type { Announcement, Franchisee } from "@/lib/types";
+import type { Announcement, Franchisee, Outlet } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Send, Eye, X, Check, Clock, Mail } from "lucide-react";
@@ -19,6 +19,7 @@ export default function AdminAnnouncementsPage() {
   const [franchisees, setFranchisees] = useState<Franchisee[]>([]);
   const [reads, setReads] = useState<{ announcement_id: string; user_id: string; read_at: string }[]>([]);
   const [profiles, setProfiles] = useState<{ id: string; franchisee_id: string | null }[]>([]);
+  const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [title, setTitle] = useState("");
   const [target, setTarget] = useState<string>("all");
   const [schedule, setSchedule] = useState("");
@@ -27,16 +28,18 @@ export default function AdminAnnouncementsPage() {
   const bodyRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
-    const [{ data: anns }, { data: fs }, { data: rs }, { data: ps }] = await Promise.all([
+    const [{ data: anns }, { data: fs }, { data: rs }, { data: ps }, { data: os }] = await Promise.all([
       supabase.from("announcements").select("*").order("publish_at", { ascending: false }),
       supabase.from("franchisees").select("*"),
       supabase.from("announcement_reads").select("announcement_id, user_id, read_at"),
       supabase.from("profiles").select("id, franchisee_id"),
+      supabase.from("outlets").select("*").order("outlet_code"),
     ]);
     setList((anns ?? []) as Announcement[]);
     setFranchisees((fs ?? []) as Franchisee[]);
     setReads((rs ?? []) as { announcement_id: string; user_id: string; read_at: string }[]);
     setProfiles((ps ?? []) as { id: string; franchisee_id: string | null }[]);
+    setOutlets((os ?? []) as Outlet[]);
   }, [supabase]);
 
   useEffect(() => {
@@ -210,6 +213,7 @@ export default function AdminAnnouncementsPage() {
           franchisees={franchisees}
           profiles={profiles}
           reads={reads}
+          outlets={outlets}
           onClose={() => setOpenedAnnouncement(null)}
         />
       )}
@@ -218,14 +222,22 @@ export default function AdminAnnouncementsPage() {
 }
 
 function ReadReceiptsModal({
-  announcement, franchisees, profiles, reads, onClose,
+  announcement, franchisees, profiles, reads, outlets, onClose,
 }: {
   announcement: Announcement;
   franchisees: Franchisee[];
   profiles: { id: string; franchisee_id: string | null }[];
   reads: { announcement_id: string; user_id: string; read_at: string }[];
+  outlets: Outlet[];
   onClose: () => void;
 }) {
+  // Outlet codes for a given franchisee (a franchisee may run multiple
+  // outlets — join them with ", " e.g. "CC-003, CC-005").
+  const codesFor = (fid: string) =>
+    outlets
+      .filter((o) => o.franchisee_id === fid)
+      .map((o) => o.outlet_code)
+      .join(", ") || "—";
   // One row per franchisee; opened = any user under that franchisee has a read row.
   const readByFId = (fid: string) => reads.some((r) =>
     r.announcement_id === announcement.id &&
@@ -301,6 +313,7 @@ function ReadReceiptsModal({
                   >
                     <div className="min-w-0">
                       <div className="truncate text-sm font-medium">{f.business_name}</div>
+                      <div className="truncate text-[11px] font-semibold text-[color:var(--color-brand-700)]">{codesFor(f.id)}</div>
                       <div className="truncate text-[11px] text-[color:var(--color-ink-soft)]">{f.owner_name}</div>
                     </div>
                     <div className="flex items-center gap-1.5 text-[11px] font-medium text-[color:var(--color-success)]">
@@ -326,6 +339,7 @@ function ReadReceiptsModal({
                   >
                     <div className="min-w-0">
                       <div className="truncate text-sm font-medium">{f.business_name}</div>
+                      <div className="truncate text-[11px] font-semibold text-[color:var(--color-brand-700)]">{codesFor(f.id)}</div>
                       <div className="truncate text-[11px] text-[color:var(--color-ink-soft)]">{f.owner_name}</div>
                     </div>
                     <div className="flex items-center gap-1.5 text-[11px] font-medium text-[color:var(--color-warning)]">
