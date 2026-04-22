@@ -16,7 +16,7 @@ export type NotificationKind =
 export async function notifyFranchisee(
   supabase: SupabaseClient,
   franchiseeId: string,
-  n: { kind: NotificationKind; title: string; body: string; link?: string }
+  n: { kind: NotificationKind; title: string; body: string; link?: string; scheduled_at?: string }
 ) {
   const { data: users, error } = await supabase
     .from("profiles")
@@ -29,6 +29,7 @@ export async function notifyFranchisee(
     title: n.title,
     body: n.body,
     link: n.link ?? null,
+    scheduled_at: n.scheduled_at ?? null,
   }));
   const { error: insErr } = await supabase.from("notifications").insert(rows);
   return { error: insErr ?? null };

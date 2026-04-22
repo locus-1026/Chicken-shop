@@ -21,6 +21,7 @@ import {
   LogOut,
   Store,
   Bell,
+  Calendar as CalendarIcon,
 } from "lucide-react";
 
 function Gate({ children }: { children: React.ReactNode }) {
@@ -224,6 +225,7 @@ function PortalShell({ children }: { children: React.ReactNode }) {
   const nav = useMemo(
     () => [
       { href: "/portal",               label: "Home",       icon: <LayoutDashboard size={18} /> },
+      { href: "/portal/calendar",      label: "Calendar",   icon: <CalendarIcon size={18} /> },
       { href: "/portal/sales",         label: "Sales",      icon: <Receipt size={18} /> },
       { href: "/portal/royalty",       label: "Royalty",    icon: <Wallet size={18} />, badge: royaltyAlert },
       { href: "/portal/supplies",      label: "Supplies",   icon: <ShoppingBasket size={18} />, badge: supplyAlert },

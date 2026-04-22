@@ -313,7 +313,7 @@ export default function AdminDashboard() {
           ownerName={actionTarget.ownerName}
           kind={actionTarget.kind}
           onClose={() => setActionTarget(null)}
-          onConfirm={async ({ summary, body }) => {
+          onConfirm={async ({ summary, body, when }) => {
             const supabase = createSupabaseBrowserClient();
             // Map the mock franchisee to a real Supabase franchisee by
             // business_name (seed data aligns the two on the same business_name).
@@ -329,7 +329,8 @@ export default function AdminDashboard() {
                 ? "HQ · Coaching call scheduled"
                 : "HQ · Warning notice issued",
               body,
-              link: "/portal",
+              link: target.kind === "coach" ? "/portal/calendar" : "/portal",
+              scheduled_at: target.kind === "coach" && when ? when : undefined,
             });
             if (error) {
               toast("error", "Notification failed: " + (error as Error).message);
