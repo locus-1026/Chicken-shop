@@ -84,6 +84,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
         { data: ticketRows },
         { data: auditRows },
         { data: outletRows },
+        { count: unpaidRoyalties },
       ] = await Promise.all([
         supabase
           .from("sales_reports")
@@ -106,6 +107,10 @@ function AdminShell({ children }: { children: React.ReactNode }) {
         supabase
           .from("outlets")
           .select("id"),
+        supabase
+          .from("royalties")
+          .select("id", { count: "exact", head: true })
+          .neq("status", "paid"),
       ]);
       // Sales badge: number of active outlets that have NOT yet submitted
       // today. Matches the "NEEDS ACTION" cards on /admin/sales.
@@ -117,10 +122,15 @@ function AdminShell({ children }: { children: React.ReactNode }) {
       setPendingSales(pendingOutlets);
       void salesSeen; // no longer used; kept in scope for future diff-based UX
       setPendingSupplies(supplyCount ?? 0);
-      const pending = (proofRows ?? []).filter(
+      // Royalty badge: every royalty still needing HQ action — either the
+      // statement isn't paid yet, OR a proof has been uploaded and is
+      // awaiting verification. Matches what shows on /admin/royalties.
+      const awaitingVerification = (proofRows ?? []).filter(
         (p: { verified_at: string | null; rejected_at: string | null }) => !p.verified_at && !p.rejected_at
       ).length;
-      setPendingRoyalties(pending);
+      // `unpaidRoyalties` already includes rows with pending proofs, so use
+      // max() to avoid double-counting the same statement.
+      setPendingRoyalties(Math.max(unpaidRoyalties ?? 0, awaitingVerification));
       // Help badge: open/in_progress tickets with activity after admin last visit.
       const openIds = ((ticketRows ?? []) as { id: string; created_at: string }[]);
       let helpCount = 0;
@@ -149,6 +159,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "sales_reports" }, recompute)
       .on("postgres_changes", { event: "*", schema: "public", table: "supply_orders" }, recompute)
       .on("postgres_changes", { event: "*", schema: "public", table: "royalty_proofs" }, recompute)
+      .on("postgres_changes", { event: "*", schema: "public", table: "royalties" }, recompute)
       .on("postgres_changes", { event: "*", schema: "public", table: "support_tickets" }, recompute)
       .on("postgres_changes", { event: "*", schema: "public", table: "ticket_messages" }, recompute)
       .on("postgres_changes", { event: "*", schema: "public", table: "compliance_audits" }, recompute)
