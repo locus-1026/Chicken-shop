@@ -63,6 +63,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
   const [pendingRoyalties, setPendingRoyalties] = useState(0); // proofs awaiting verification
   const [openTickets, setOpenTickets] = useState(0);           // open+in_progress tickets
   const [atRiskAudits, setAtRiskAudits] = useState(0);         // risk-flagged audits
+  const [calendarAlert, setCalendarAlert] = useState(0);       // today's upcoming events (from now)
 
   useEffect(() => {
     if (profile?.role !== "admin") return;
@@ -149,6 +150,27 @@ function AdminShell({ children }: { children: React.ReactNode }) {
       }
       setOpenTickets(helpCount);
       setAtRiskAudits(((auditRows ?? []) as { risk_flag: boolean }[]).filter((a) => a.risk_flag).length);
+
+      // Calendar alert: HQ-wide coaching calls still to happen today (from
+      // now onwards) + any royalties due today that aren't paid yet. Badge
+      // decreases as each scheduled time passes (60s tick below).
+      const now = new Date();
+      const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString();
+      const nowIso = now.toISOString();
+      const [{ data: upCoaching }, { data: upRoyalties }] = await Promise.all([
+        supabase
+          .from("notifications")
+          .select("id")
+          .eq("kind", "coaching_call")
+          .gte("scheduled_at", nowIso)
+          .lte("scheduled_at", endOfToday),
+        supabase
+          .from("royalties")
+          .select("id")
+          .neq("status", "paid")
+          .eq("due_date", today),
+      ]);
+      setCalendarAlert((upCoaching?.length ?? 0) + (upRoyalties?.length ?? 0));
     };
 
     recompute();
@@ -183,7 +205,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
   const nav = useMemo(
     () => [
       { href: "/admin/dashboard",     label: "War Room",     icon: <LayoutDashboard size={18} /> },
-      { href: "/admin/calendar",      label: "Calendar",     icon: <CalendarIcon size={18} /> },
+      { href: "/admin/calendar",      label: "Calendar",     icon: <CalendarIcon size={18} />, badge: calendarAlert },
       { href: "/admin/sales",         label: "Daily sales",  icon: <TrendingUp size={18} />, badge: pendingSales },
       { href: "/admin/franchisees",   label: "Franchisees",  icon: <Users size={18} /> },
       { href: "/admin/royalties",     label: "Royalties",    icon: <Receipt size={18} />, badge: pendingRoyalties },
@@ -193,7 +215,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
       { href: "/admin/training",      label: "Training",     icon: <GraduationCap size={18} /> },
       { href: "/admin/announcements", label: "Announcements", icon: <Megaphone size={18} /> },
     ],
-    [pendingSales, pendingSupplies, pendingRoyalties, atRiskAudits, openTickets]
+    [pendingSales, pendingSupplies, pendingRoyalties, atRiskAudits, openTickets, calendarAlert]
   );
 
   // Silence unused-variable lint for `pathname` — it's here so future badge

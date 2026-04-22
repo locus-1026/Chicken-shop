@@ -104,6 +104,7 @@ function PortalShell({ children }: { children: React.ReactNode }) {
   const [newsAlert, setNewsAlert] = useState(0);
   const [salesAlert, setSalesAlert] = useState(0); // 1 if today's sales not yet submitted
   const [trainingAlert, setTrainingAlert] = useState(0); // # modules still to complete
+  const [calendarAlert, setCalendarAlert] = useState(0); // today's upcoming events (from now)
 
   const recompute = useCallback(async () => {
     if (!outlet || !profile?.id) return;
@@ -230,6 +231,30 @@ function PortalShell({ children }: { children: React.ReactNode }) {
     const totalMods = ((mods ?? []) as { id: string }[]).length;
     const completedCount = ((mods ?? []) as { id: string }[]).filter((m) => completedSet.has(m.id)).length;
     setTrainingAlert(Math.max(0, totalMods - completedCount));
+
+    // Calendar alert: events scheduled for today that haven't happened yet.
+    // Coaching calls after "now"; royalty due today (all-day) with status
+    // still unpaid. Badge drops after each time passes or the due date is
+    // marked paid.
+    const now = new Date();
+    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString();
+    const nowIso = now.toISOString();
+    const [{ data: upCoaching }, { data: upRoyalties }] = await Promise.all([
+      supabase
+        .from("notifications")
+        .select("id")
+        .eq("recipient_id", profile.id)
+        .eq("kind", "coaching_call")
+        .gte("scheduled_at", nowIso)
+        .lte("scheduled_at", endOfToday),
+      supabase
+        .from("royalties")
+        .select("id")
+        .eq("outlet_id", outlet.id)
+        .neq("status", "paid")
+        .eq("due_date", today),
+    ]);
+    setCalendarAlert((upCoaching?.length ?? 0) + (upRoyalties?.length ?? 0));
   }, [supabase, outlet, profile?.id]);
 
   useEffect(() => {
@@ -254,17 +279,21 @@ function PortalShell({ children }: { children: React.ReactNode }) {
     const onSeen = () => recompute();
     window.addEventListener("cc.supplies-seen", onSeen);
     window.addEventListener("cc.support-seen", onSeen);
+    // Tick every 60s so the calendar badge drops as scheduled times pass
+    // (e.g. a 2pm call stops counting at 2:01pm).
+    const tick = setInterval(recompute, 60_000);
     return () => {
       supabase.removeChannel(channel);
       window.removeEventListener("cc.supplies-seen", onSeen);
       window.removeEventListener("cc.support-seen", onSeen);
+      clearInterval(tick);
     };
   }, [recompute, supabase, profile?.id]);
 
   const nav = useMemo(
     () => [
       { href: "/portal",               label: "Home",       icon: <LayoutDashboard size={18} /> },
-      { href: "/portal/calendar",      label: "Calendar",   icon: <CalendarIcon size={18} /> },
+      { href: "/portal/calendar",      label: "Calendar",   icon: <CalendarIcon size={18} />, badge: calendarAlert },
       { href: "/portal/sales",         label: "Sales",      icon: <Receipt size={18} />, badge: salesAlert },
       { href: "/portal/royalty",       label: "Royalty",    icon: <Wallet size={18} />, badge: royaltyAlert },
       { href: "/portal/supplies",      label: "Supplies",   icon: <ShoppingBasket size={18} />, badge: supplyAlert },
@@ -274,7 +303,7 @@ function PortalShell({ children }: { children: React.ReactNode }) {
       { href: "/portal/support",       label: "Help",       icon: <LifeBuoy size={18} />, badge: supportAlert },
       { href: "/portal/announcements", label: "News",       icon: <Megaphone size={18} />, badge: newsAlert },
     ],
-    [royaltyAlert, supplyAlert, supportAlert, newsAlert, salesAlert, trainingAlert]
+    [royaltyAlert, supplyAlert, supportAlert, newsAlert, salesAlert, trainingAlert, calendarAlert]
   );
 
   if (!outlet || !franchisee) {
