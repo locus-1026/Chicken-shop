@@ -7,7 +7,7 @@ import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { Stagger, StaggerItem } from "@/components/ui/Stagger";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
 import { mockAudits, mockFranchisees, mockOutlets } from "@/lib/mock-data";
 import type { Royalty } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -138,12 +138,35 @@ export default function AdminDashboard() {
 
   // Last 3 distinct billing periods from the real royalties table.
   const recentPeriods = [...new Set(royalties.map((r) => r.period))].slice(0, 3);
-  const barData = recentPeriods.map((p) => ({
-    month: monthLabel(p),
-    total: royalties
-      .filter((r) => r.period === p)
-      .reduce((s, r) => s + r.royalty_amount + r.marketing_fee, 0),
-  }));
+  // Split each month into paid vs outstanding so HQ can see collection
+  // progress at a glance (green = collected, red = still owed).
+  const barData = recentPeriods.map((p) => {
+    const rows = royalties.filter((r) => r.period === p);
+    const paid = rows.filter((r) => r.status === "paid")
+      .reduce((s, r) => s + r.royalty_amount + r.marketing_fee, 0);
+    const outstanding = rows.filter((r) => r.status !== "paid")
+      .reduce((s, r) => s + r.royalty_amount + r.marketing_fee, 0);
+    return { month: monthLabel(p), Paid: paid, Outstanding: outstanding };
+  });
+
+  // Per-outlet × per-month grid so HQ can see exactly which outlet
+  // paid and which didn't for each of the last 3 months.
+  const collectionGrid = outlets.map((o) => {
+    const row: {
+      outlet: typeof o;
+      cells: { period: string; status: "paid" | "unpaid" | "none"; amount: number }[];
+    } = { outlet: o, cells: [] };
+    for (const p of recentPeriods) {
+      const r = royalties.find((x) => x.outlet_id === o.id && x.period === p);
+      if (!r) row.cells.push({ period: p, status: "none", amount: 0 });
+      else row.cells.push({
+        period: p,
+        status: r.status === "paid" ? "paid" : "unpaid",
+        amount: r.royalty_amount + r.marketing_fee,
+      });
+    }
+    return row;
+  });
 
   return (
     <div className="space-y-6">
@@ -359,8 +382,15 @@ export default function AdminDashboard() {
       )}
 
       <Card>
-        <CardTitle>Royalty collection — last 3 months</CardTitle>
-        <div className="mt-4 h-64">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div>
+            <CardTitle>Royalty collection — last 3 months</CardTitle>
+            <CardSubtitle>Green = paid · Red = still owed. Grid below shows which outlet is which.</CardSubtitle>
+          </div>
+        </div>
+
+        {/* Stacked bars: paid vs outstanding per month */}
+        <div className="mt-4 h-56">
           <ResponsiveContainer>
             <BarChart data={barData}>
               <CartesianGrid strokeDasharray="2 4" stroke="#F0DCC2" vertical={false} />
@@ -370,9 +400,50 @@ export default function AdminDashboard() {
                 contentStyle={{ borderRadius: 10, border: "1px solid rgba(232,89,12,0.25)", fontSize: 12 }}
                 formatter={(v: number) => RM(v)}
               />
-              <Bar dataKey="total" fill="#E8590C" radius={[8, 8, 0, 0]} />
+              <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+              <Bar dataKey="Paid" stackId="r" fill="#2e8840" radius={[0, 0, 0, 0]} />
+              <Bar dataKey="Outstanding" stackId="r" fill="#c64545" radius={[8, 8, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
+        </div>
+
+        {/* Per-outlet collection grid */}
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-wider text-[color:var(--color-ink-soft)]">
+                <th className="px-3 py-2">Outlet</th>
+                {recentPeriods.map((p) => (
+                  <th key={p} className="px-3 py-2">{monthLabel(p)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {collectionGrid.map(({ outlet, cells }) => (
+                <tr key={outlet.id} className="border-t border-[color:var(--color-border)]">
+                  <td className="px-3 py-2">
+                    <div className="font-semibold">{outlet.outlet_code}</div>
+                    <div className="text-[11px] text-[color:var(--color-ink-soft)]">{outlet.location}</div>
+                  </td>
+                  {cells.map((c) => (
+                    <td key={c.period} className="px-3 py-2">
+                      {c.status === "none" ? (
+                        <span className="text-[11px] text-[color:var(--color-ink-soft)]">—</span>
+                      ) : c.status === "paid" ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-[color:var(--color-success-soft)] px-2 py-0.5 text-[11px] font-medium text-[color:var(--color-success)]">
+                          ✓ Paid · RM {c.amount.toLocaleString()}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-[color:var(--color-danger-soft)] px-2 py-0.5 text-[11px] font-medium text-[color:var(--color-danger)]">
+                          ✗ Unpaid · RM {c.amount.toLocaleString()}
+                        </span>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </Card>
     </div>
