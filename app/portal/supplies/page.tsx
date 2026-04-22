@@ -57,6 +57,12 @@ export default function SuppliesPage() {
 
   useEffect(() => {
     loadHistory();
+    // Mark this outlet's supply feed as "seen now" so the sidebar Supplies
+    // badge clears (portal/layout listens on cc.supplies-seen).
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("cc.portal.supplies.lastSeen." + outlet.id, new Date().toISOString());
+      window.dispatchEvent(new Event("cc.supplies-seen"));
+    }
     const channel = supabase
       .channel("portal-supplies-" + outlet.id)
       .on("postgres_changes", { event: "*", schema: "public", table: "supply_orders" }, loadHistory)

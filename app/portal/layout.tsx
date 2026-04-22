@@ -82,7 +82,7 @@ function PortalShell({ children }: { children: React.ReactNode }) {
         .eq("outlet_id", outlet.id),
       supabase
         .from("supply_orders")
-        .select("id, status")
+        .select("id, status, submitted_at, delivered_at")
         .eq("outlet_id", outlet.id)
         .neq("status", "submitted")
         .neq("status", "cancelled"),
@@ -111,8 +111,20 @@ function PortalShell({ children }: { children: React.ReactNode }) {
       .filter((p) => p.rejected_at).length;
     setRoyaltyAlert(unpaidOverdue + rejectedCount);
 
-    // Supplies alert: number of active in-flight orders (confirmed/shipped/delivered)
-    setSupplyAlert((orders ?? []).length);
+    // Supplies alert: only count orders whose latest activity (submitted or
+    // delivered) happened AFTER the franchisee last opened /portal/supplies.
+    // Once they visit the page we bump the watermark forward and the badge
+    // clears — matches how /portal/announcements clears News via announcement_reads.
+    const lastSeenRaw = typeof window !== "undefined"
+      ? window.localStorage.getItem("cc.portal.supplies.lastSeen." + outlet.id)
+      : null;
+    const lastSeen = lastSeenRaw ?? "1970-01-01";
+    const newish = ((orders ?? []) as { submitted_at: string; delivered_at: string | null }[])
+      .filter((o) => {
+        const latest = o.delivered_at ?? o.submitted_at;
+        return latest > lastSeen;
+      });
+    setSupplyAlert(newish.length);
 
     // Support alert: tickets in_progress that the franchisee hasn't "seen" since
     // an HQ reply. Simpler heuristic: count tickets where status = 'in_progress'
@@ -138,7 +150,14 @@ function PortalShell({ children }: { children: React.ReactNode }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "announcements" }, recompute)
       .on("postgres_changes", { event: "*", schema: "public", table: "announcement_reads" }, recompute)
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    // Also listen for the "supplies page visited" custom event so the badge
+    // clears the instant the franchisee opens the page.
+    const onSuppliesSeen = () => recompute();
+    window.addEventListener("cc.supplies-seen", onSuppliesSeen);
+    return () => {
+      supabase.removeChannel(channel);
+      window.removeEventListener("cc.supplies-seen", onSuppliesSeen);
+    };
   }, [recompute, supabase, profile?.id]);
 
   const nav = useMemo(
