@@ -71,11 +71,13 @@ create policy "admin all proofs" on public.royalty_proofs for all
 -- 3. Supply orders
 ----------------------------------------------------------------------
 -- Postgres doesn't support `create type if not exists`; use a DO block.
-do $$ begin
+do $do_enum$
+begin
   if not exists (select 1 from pg_type where typname = 'supply_order_status') then
     create type supply_order_status as enum ('submitted', 'confirmed', 'shipped', 'delivered', 'cancelled');
   end if;
-end $$;
+end;
+$do_enum$;
 
 create table if not exists public.supply_orders (
   id uuid primary key default gen_random_uuid(),
@@ -178,7 +180,7 @@ grant select, insert, update, delete on public.supply_order_items to anon, authe
 ----------------------------------------------------------------------
 -- 6. Seed a few supply orders so HQ lands on non-empty data
 ----------------------------------------------------------------------
-do $$
+do $do_seed$
 declare
   o1 uuid := '22222222-2222-2222-2222-222222222201';
   o2 uuid := '22222222-2222-2222-2222-222222222202';
@@ -216,4 +218,5 @@ begin
   insert into public.supply_order_items (order_id, sku, name, unit, qty, unit_price) values
     (new_id, 'rice',   'Premium jasmine rice', '10kg bag', 3, 95),
     (new_id, 'pandan', 'Pandan essence',       '250ml',    2, 14);
-end $$;
+end;
+$do_seed$;
