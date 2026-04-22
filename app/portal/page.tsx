@@ -164,7 +164,7 @@ export default function PortalHome() {
             return (
           <Card className={allDone
             ? ""
-            : "!border-[color:var(--color-danger)] !border-2 ring-4 ring-[color:var(--color-danger)]/10"}>
+            : "!border-[color:var(--color-danger)] !border-2"}>
             <div className="flex items-center justify-between">
               <CardTitle>
                 <span className="inline-flex items-center gap-2">
