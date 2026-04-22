@@ -7,7 +7,18 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useCurrentOutlet } from "@/lib/current-outlet";
 import { useAuth } from "@/lib/auth";
 import { formatDate, RM2, daysUntil } from "@/lib/utils";
-import { Pin, Calendar, Megaphone } from "lucide-react";
+import { Pin, Calendar, Megaphone, Bell, PhoneCall, FileWarning, Receipt, TrendingUp, GraduationCap } from "lucide-react";
+import Link from "next/link";
+
+type Notification = {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  link: string | null;
+  read_at: string | null;
+  created_at: string;
+};
 
 export default function AnnouncementsPage() {
   const { outlet } = useCurrentOutlet();
@@ -15,6 +26,34 @@ export default function AnnouncementsPage() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [reads, setReads] = useState<Set<string>>(new Set());
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  // Load + live-subscribe to direct HQ notifications for this user.
+  useEffect(() => {
+    if (!profile?.id) return;
+    const refresh = async () => {
+      const { data } = await supabase
+        .from("notifications")
+        .select("id, kind, title, body, link, read_at, created_at")
+        .eq("recipient_id", profile.id)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      setNotifications((data ?? []) as Notification[]);
+      // Mark everything still unread as read now that the user is on this page.
+      const unreadIds = (data ?? []).filter((n: Notification) => !n.read_at).map((n: Notification) => n.id);
+      if (unreadIds.length > 0) {
+        await supabase.from("notifications")
+          .update({ read_at: new Date().toISOString() })
+          .in("id", unreadIds);
+      }
+    };
+    refresh();
+    const channel = supabase
+      .channel("portal-news-notifications-" + profile.id)
+      .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `recipient_id=eq.${profile.id}` }, refresh)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [supabase, profile?.id]);
 
   // Fetch announcements + read receipts + outstanding royalty for pinned card.
   useEffect(() => {
@@ -126,6 +165,18 @@ export default function AnnouncementsPage() {
           {pinned.map(renderCard)}
         </div>
       </section>
+
+      {notifications.length > 0 && (
+        <section>
+          <div className="mb-2 text-[12px] font-semibold uppercase tracking-wider text-[color:var(--color-ink-soft)]">
+            From HQ to you
+          </div>
+          <div className="space-y-3">
+            {notifications.map((n) => <NotificationCard key={n.id} n={n} />)}
+          </div>
+        </section>
+      )}
+
       <section>
         <div className="mb-2 text-[12px] font-semibold uppercase tracking-wider text-[color:var(--color-ink-soft)]">
           Recent
@@ -140,6 +191,41 @@ export default function AnnouncementsPage() {
       </section>
     </div>
   );
+}
+
+function NotificationCard({ n }: { n: Notification }) {
+  const wasUnread = !n.read_at;
+  const Icon =
+    n.kind === "coaching_call" ? PhoneCall
+    : n.kind === "warning_notice" ? FileWarning
+    : n.kind === "nudge_royalty" ? Receipt
+    : n.kind === "nudge_sales" ? TrendingUp
+    : n.kind === "nudge_training" ? GraduationCap
+    : Bell;
+  const tone = n.kind === "warning_notice" ? "danger" : n.kind === "coaching_call" ? "brand" : "warning";
+  const borderTone =
+    tone === "danger" ? "!border-[color:var(--color-danger)] bg-[color:var(--color-danger-soft)]"
+    : tone === "brand" ? "!border-[color:var(--color-brand-200)] bg-[color:var(--color-brand-50)]/60"
+    : "!border-[color:var(--color-warning)] bg-[color:var(--color-warning-soft)]";
+  const inner = (
+    <article className={"rounded-[16px] border p-4 " + borderTone}>
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-[color:var(--color-ink)]">
+          <Icon size={16} />
+        </div>
+        <div className="flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="text-[14px] font-semibold">{n.title}</h4>
+            {wasUnread && <Pill tone="danger">New</Pill>}
+          </div>
+          <p className="mt-1 text-[13px] leading-relaxed">{n.body}</p>
+          <div className="mt-1.5 text-[11px] text-[color:var(--color-ink-soft)]">{formatDate(n.created_at)}</div>
+        </div>
+      </div>
+    </article>
+  );
+  if (n.link) return <Link href={n.link} className="block transition-all hover:-translate-y-0.5">{inner}</Link>;
+  return inner;
 }
 
 function LivePinnedCard({
