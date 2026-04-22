@@ -234,6 +234,44 @@ export default function AdminCalendarPage() {
         <LegendDot color="var(--color-danger)" label="Overdue" />
       </div>
 
+      {/* Overdue / out-of-week items — persistent, not tied to the current week view */}
+      {(() => {
+        const todayIso = toISODate(new Date());
+        const overdue = filteredAll.filter((e) => e.at.slice(0, 10) < todayIso);
+        if (overdue.length === 0) return null;
+        return (
+          <section className="rounded-[14px] border border-[color:var(--color-danger)]/50 bg-[color:var(--color-danger-soft)]/40 p-3">
+            <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wider text-[color:var(--color-danger)]">
+              <AlertTriangle size={14} /> Overdue · {overdue.length}
+              <span className="ml-1 font-normal normal-case tracking-normal text-[color:var(--color-ink-soft)]">(not on this week — jump to the date)</span>
+            </div>
+            <div className="space-y-2">
+              {overdue.map((e) => {
+                const d = new Date(e.at);
+                return (
+                  <button
+                    key={"od-" + e.id}
+                    onClick={() => {
+                      setWeekAnchor(startOfWeek(d));
+                      setSelectedDate(toISODate(d));
+                    }}
+                    className="flex w-full items-center justify-between gap-3 rounded-[10px] border border-[color:var(--color-border)] bg-white p-3 text-left hover:border-[color:var(--color-danger)]"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-[13px] font-semibold">{e.title}</div>
+                      <div className="mt-0.5 text-[12px] text-[color:var(--color-ink-soft)]">
+                        {e.subject} · was due {d.toLocaleDateString("en-MY", { weekday: "short", day: "numeric", month: "short" })} ({Math.abs(daysUntil(e.at))}d ago)
+                      </div>
+                    </div>
+                    <StatusPill e={e} />
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })()}
+
       {dayEvents.length === 0 ? (
         <Card>
           <div className="py-10 text-center text-sm text-[color:var(--color-ink-soft)]">
