@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
-import { mockAudits, mockOutlets } from "@/lib/mock-data";
 import { useToast } from "@/components/ui/Toast";
 import { formatDate } from "@/lib/utils";
-import type { ComplianceAudit } from "@/lib/types";
+import type { ComplianceAudit, Outlet } from "@/lib/types";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 const defaultChecklist = [
   "Food temperature logs up to date",
@@ -28,42 +28,65 @@ const auditorOptions = [
 
 export default function AdminAuditsPage() {
   const toast = useToast();
-  const [audits, setAudits] = useState<ComplianceAudit[]>(mockAudits);
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const [audits, setAudits] = useState<ComplianceAudit[]>([]);
+  const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [show, setShow] = useState(false);
-  const [outletId, setOutletId] = useState(mockOutlets[0].id);
+  const [outletId, setOutletId] = useState<string>("");
   const [items, setItems] = useState(defaultChecklist.map((i) => ({ item: i, pass: true })));
   const [auditor, setAuditor] = useState(auditorOptions[0]);
 
+  const load = useCallback(async () => {
+    const [{ data: auds }, { data: outs }] = await Promise.all([
+      supabase.from("compliance_audits").select("*").order("audit_date", { ascending: false }),
+      supabase.from("outlets").select("*").order("outlet_code"),
+    ]);
+    setAudits((auds ?? []) as ComplianceAudit[]);
+    const olist = (outs ?? []) as Outlet[];
+    setOutlets(olist);
+    if (!outletId && olist.length > 0) setOutletId(olist[0].id);
+  }, [supabase, outletId]);
+
+  useEffect(() => {
+    load();
+    const channel = supabase
+      .channel("admin-audits")
+      .on("postgres_changes", { event: "*", schema: "public", table: "compliance_audits" }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, []);
+
   const score = Math.round((items.filter((i) => i.pass).length / items.length) * 100);
 
-  const save = () => {
+  const save = async () => {
     if (!auditor || auditor.replace("HQ Ops —", "").trim().length < 2) {
       toast("error", "Please pick an auditor.");
       return;
     }
-    const newA: ComplianceAudit = {
-      id: "a-new-" + Date.now(),
+    const prevTwo = audits.filter((a) => a.outlet_id === outletId).sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1)).slice(0, 1);
+    const riskFlag = !!(prevTwo[0] && prevTwo[0].score < 80 && score < 80);
+    const { error } = await supabase.from("compliance_audits").insert({
       outlet_id: outletId,
       audit_date: new Date().toISOString().slice(0, 10),
       score,
       checklist_items: items,
       auditor,
       signed_off_by: "Chan Kok Weng",
-      risk_flag: false,
+      risk_flag: riskFlag,
       notes: null,
-    };
-    const prevTwo = audits.filter((a) => a.outlet_id === outletId).sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1)).slice(0, 1);
-    if (prevTwo[0] && prevTwo[0].score < 80 && score < 80) newA.risk_flag = true;
-    setAudits([newA, ...audits]);
+    });
+    if (error) { toast("error", `Save failed: ${error.message}`); return; }
+    await load();
     setShow(false);
     setItems(defaultChecklist.map((i) => ({ item: i, pass: true })));
-    toast(newA.risk_flag ? "error" : "success", newA.risk_flag
+    toast(riskFlag ? "error" : "success", riskFlag
       ? `Audit saved. Outlet flagged at risk — ${score}% after two sub-80 scores.`
       : `Audit saved — score ${score}%.`);
   };
 
   const atRiskIds = new Set<string>();
-  mockOutlets.forEach((o) => {
+  outlets.forEach((o) => {
     const last2 = audits.filter((a) => a.outlet_id === o.id).sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1)).slice(0, 2);
     if (last2.length === 2 && last2[0].score < 80 && last2[1].score < 80) atRiskIds.add(o.id);
   });
@@ -83,7 +106,7 @@ export default function AdminAuditsPage() {
           <CardTitle>Outlets at risk</CardTitle>
           <div className="mt-2 flex flex-wrap gap-2">
             {[...atRiskIds].map((id) => {
-              const o = mockOutlets.find((x) => x.id === id)!;
+              const o = outlets.find((x) => x.id === id)!;
               return <Pill key={id} tone="danger">{o.outlet_code} · {o.location}</Pill>;
             })}
           </div>
@@ -104,7 +127,7 @@ export default function AdminAuditsPage() {
           </thead>
           <tbody>
             {audits.sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1)).map((a) => {
-              const o = mockOutlets.find((x) => x.id === a.outlet_id);
+              const o = outlets.find((x) => x.id === a.outlet_id);
               if (!o) return null;
               const tone = a.score >= 85 ? "success" : a.score >= 70 ? "warning" : "danger";
               return (
@@ -137,7 +160,7 @@ export default function AdminAuditsPage() {
                 <label>
                   <span className="text-[12px] font-medium text-[color:var(--color-ink-soft)]">Outlet</span>
                   <select value={outletId} onChange={(e) => setOutletId(e.target.value)} className="mt-1 w-full rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2">
-                    {mockOutlets.map((o) => <option key={o.id} value={o.id}>{o.outlet_code} — {o.location}</option>)}
+                    {outlets.map((o) => <option key={o.id} value={o.id}>{o.outlet_code} — {o.location}</option>)}
                   </select>
                 </label>
                 <label>

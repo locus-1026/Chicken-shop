@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
@@ -8,8 +8,9 @@ import { Stagger, StaggerItem } from "@/components/ui/Stagger";
 import { ProgressRing } from "@/components/charts/ProgressRing";
 import { fireConfetti } from "@/components/ui/Confetti";
 import { useToast } from "@/components/ui/Toast";
-import { mockTrainingModules, mockTrainingProgress } from "@/lib/mock-data";
-import type { TrainingModule } from "@/lib/types";
+import type { TrainingModule, TrainingProgress } from "@/lib/types";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/auth";
 import { PlayCircle, FileText, ArrowLeft } from "lucide-react";
 
 // Module-specific quizzes. Each ties to the module id so staff get relevant
@@ -52,13 +53,43 @@ const quizzesByModule: Record<string, Question[]> = {
     { q: "Customer-facing counters must be wiped every:", options: ["15 minutes during peak", "Once per shift", "End of day"], correct: 0 },
   ],
 };
+// DB module UUIDs end in 01..05, matching the t-1..t-5 quiz keys.
 function quizFor(moduleId: string): Question[] {
-  return quizzesByModule[moduleId] ?? quizzesByModule["t-1"];
+  const legacy = quizzesByModule[moduleId];
+  if (legacy) return legacy;
+  const suffix = moduleId.slice(-2);
+  const key = `t-${parseInt(suffix, 10) || 1}`;
+  return quizzesByModule[key] ?? quizzesByModule["t-1"];
 }
 
 export default function TrainingPage() {
-  const [progress, setProgress] = useState(mockTrainingProgress);
+  const { profile } = useAuth();
+  const toast = useToast();
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const [modules, setModules] = useState<TrainingModule[]>([]);
+  const [progress, setProgress] = useState<TrainingProgress[]>([]);
   const [active, setActive] = useState<TrainingModule | null>(null);
+
+  const load = useCallback(async () => {
+    const [{ data: mods }, { data: prog }] = await Promise.all([
+      supabase.from("training_modules").select("*").order("passing_score"),
+      profile?.id
+        ? supabase.from("training_progress").select("*").eq("user_id", profile.id)
+        : Promise.resolve({ data: [] as TrainingProgress[] }),
+    ]);
+    setModules((mods ?? []) as TrainingModule[]);
+    setProgress((prog ?? []) as TrainingProgress[]);
+  }, [supabase, profile?.id]);
+
+  useEffect(() => {
+    load();
+    if (!profile?.id) return;
+    const channel = supabase
+      .channel("portal-training-" + profile.id)
+      .on("postgres_changes", { event: "*", schema: "public", table: "training_progress", filter: `user_id=eq.${profile.id}` }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [load, supabase, profile?.id]);
 
   const progressFor = (id: string) => progress.find((p) => p.module_id === id);
 
@@ -68,12 +99,12 @@ export default function TrainingPage() {
         <CardTitle>Keep your team sharp</CardTitle>
         <CardSubtitle>Five modules. Each one makes your outlet stronger.</CardSubtitle>
         <div className="mt-3 text-[13px] text-[color:var(--color-brand-700)] font-medium">
-          {progress.filter((p) => p.completed_at).length} / {mockTrainingModules.length} completed
+          {progress.filter((p) => p.completed_at).length} / {modules.length} completed
         </div>
       </Card>
 
       <Stagger className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {mockTrainingModules.map((m) => {
+        {modules.map((m) => {
           const p = progressFor(m.id);
           const done = !!p?.completed_at;
           const pct = done ? 100 : p?.attempts ? 40 : 0;
@@ -112,28 +143,21 @@ export default function TrainingPage() {
         <LearningModal
           module={active}
           onClose={() => setActive(null)}
-          onPass={(score) => {
-            setProgress((prev) => {
-              const existing = prev.find((x) => x.module_id === active.id);
-              if (existing) {
-                return prev.map((x) =>
-                  x.module_id === active.id
-                    ? { ...x, completed_at: new Date().toISOString(), score, attempts: x.attempts + 1 }
-                    : x
-                );
-              }
-              return [
-                ...prev,
-                {
-                  id: "tp-new-" + Date.now(),
-                  user_id: "u-1",
-                  module_id: active.id,
-                  completed_at: new Date().toISOString(),
-                  score,
-                  attempts: 1,
-                },
-              ];
-            });
+          onPass={async (score) => {
+            if (!profile?.id) { toast("error", "Sign in required."); return; }
+            const existing = progress.find((x) => x.module_id === active.id);
+            const payload = {
+              user_id: profile.id,
+              module_id: active.id,
+              completed_at: new Date().toISOString(),
+              score,
+              attempts: (existing?.attempts ?? 0) + 1,
+            };
+            const { error } = existing
+              ? await supabase.from("training_progress").update(payload).eq("id", existing.id)
+              : await supabase.from("training_progress").insert(payload);
+            if (error) { toast("error", `Save failed: ${error.message}`); return; }
+            await load();
             fireConfetti();
             setActive(null);
           }}

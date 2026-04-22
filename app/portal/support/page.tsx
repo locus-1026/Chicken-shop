@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
-import { mockTickets, mockTicketMessages } from "@/lib/mock-data";
 import { useCurrentOutlet } from "@/lib/current-outlet";
+import { useAuth } from "@/lib/auth";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/Toast";
 import { formatDate } from "@/lib/utils";
 import type { SupportTicket, TicketMessage } from "@/lib/types";
@@ -15,19 +16,51 @@ const categories = ["IT / POS", "Supply Chain", "Marketing", "HR / Staffing", "F
 
 export default function SupportPage() {
   const { outlet, franchisee } = useCurrentOutlet();
+  const { profile } = useAuth();
   const toast = useToast();
-  const [tickets, setTickets] = useState<SupportTicket[]>(mockTickets);
-  const [messages, setMessages] = useState<TicketMessage[]>(mockTicketMessages);
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [messages, setMessages] = useState<TicketMessage[]>([]);
   const [form, setForm] = useState({ category: categories[0], subject: "", description: "" });
   const [openTicketId, setOpenTicketId] = useState<string | null>(null);
   const [reply, setReply] = useState("");
+
+  const load = useCallback(async () => {
+    const { data: ts } = await supabase
+      .from("support_tickets")
+      .select("id, outlet_id, category, subject, description, photo_url, status, created_at")
+      .eq("outlet_id", outlet.id)
+      .order("created_at", { ascending: false });
+    const ticketRows = (ts ?? []) as SupportTicket[];
+    setTickets(ticketRows);
+    if (ticketRows.length > 0) {
+      const { data: ms } = await supabase
+        .from("ticket_messages")
+        .select("id, ticket_id, author, author_name, body, created_at")
+        .in("ticket_id", ticketRows.map((t) => t.id))
+        .order("created_at", { ascending: true });
+      setMessages((ms ?? []) as TicketMessage[]);
+    } else {
+      setMessages([]);
+    }
+  }, [supabase, outlet.id]);
+
+  useEffect(() => {
+    load();
+    const channel = supabase
+      .channel("portal-support-" + outlet.id)
+      .on("postgres_changes", { event: "*", schema: "public", table: "support_tickets", filter: `outlet_id=eq.${outlet.id}` }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "ticket_messages" }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [load, supabase, outlet.id]);
 
   const sortedTickets = useMemo(
     () => [...tickets].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)),
     [tickets]
   );
 
-  const submit = () => {
+  const submit = async () => {
     if (!form.subject.trim()) {
       toast("error", "Please add a short subject.");
       return;
@@ -36,46 +69,48 @@ export default function SupportPage() {
       toast("error", "Please describe the issue in at least 10 characters.");
       return;
     }
-    const id = "tk-new-" + Date.now();
-    const t: SupportTicket = {
-      id,
-      outlet_id: outlet.id,
-      category: form.category,
-      subject: form.subject,
-      description: form.description,
-      photo_url: null,
-      status: "open",
-      created_at: new Date().toISOString(),
-    };
-    const firstMsg: TicketMessage = {
-      id: "tm-new-" + Date.now(),
-      ticket_id: id,
+    const { data: inserted, error } = await supabase
+      .from("support_tickets")
+      .insert({
+        outlet_id: outlet.id,
+        submitted_by: profile?.id,
+        category: form.category,
+        subject: form.subject,
+        description: form.description,
+        photo_url: null,
+        status: "open",
+      })
+      .select("id")
+      .single();
+    if (error || !inserted) { toast("error", `Submit failed: ${error?.message ?? "unknown"}`); return; }
+    await supabase.from("ticket_messages").insert({
+      ticket_id: inserted.id,
       author: "franchisee",
       author_name: franchisee.owner_name,
       body: form.description,
-      created_at: new Date().toISOString(),
-    };
-    setTickets([t, ...tickets]);
-    setMessages([...messages, firstMsg]);
+    });
+    await load();
     setForm({ category: categories[0], subject: "", description: "" });
     toast("success", "Ticket submitted. HQ will respond within one business day.");
-    setOpenTicketId(id);
+    setOpenTicketId(inserted.id);
   };
 
-  const postReply = () => {
+  const postReply = async () => {
     if (!openTicketId || !reply.trim()) return;
-    const msg: TicketMessage = {
-      id: "tm-new-" + Date.now(),
+    const { error } = await supabase.from("ticket_messages").insert({
       ticket_id: openTicketId,
       author: "franchisee",
       author_name: franchisee.owner_name,
       body: reply.trim(),
-      created_at: new Date().toISOString(),
-    };
-    setMessages([...messages, msg]);
-    setReply("");
+    });
+    if (error) { toast("error", `Reply failed: ${error.message}`); return; }
     // Any follow-up by the franchisee reopens a resolved ticket.
-    setTickets((prev) => prev.map((t) => (t.id === openTicketId && t.status === "resolved" ? { ...t, status: "open" } : t)));
+    const open = tickets.find((t) => t.id === openTicketId);
+    if (open && open.status === "resolved") {
+      await supabase.from("support_tickets").update({ status: "open" }).eq("id", openTicketId);
+    }
+    await load();
+    setReply("");
     toast("success", "Reply sent.");
   };
 

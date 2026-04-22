@@ -1,48 +1,57 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
-import { mockAudits, resolveMockOutletId } from "@/lib/mock-data";
 import { useCurrentOutlet } from "@/lib/current-outlet";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import type { ComplianceAudit } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
 import { Check, X } from "lucide-react";
 import { EmptyState } from "@/components/ui/EmptyState";
 
 export default function CompliancePage() {
   const { outlet } = useCurrentOutlet();
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  // Franchisee "resolved?" ticks remain local since HQ's source-of-truth
+  // audit rows shouldn't be mutated by franchisees (RLS forbids it anyway).
   const storageKey = `cc.resolved.${outlet.id}`;
+  const [audits, setAudits] = useState<ComplianceAudit[]>([]);
 
   const loadResolved = (): Record<string, number[]> => {
     if (typeof window === "undefined") return {};
-    try {
-      return JSON.parse(window.localStorage.getItem(storageKey) || "{}");
-    } catch {
-      return {};
-    }
+    try { return JSON.parse(window.localStorage.getItem(storageKey) || "{}"); }
+    catch { return {}; }
   };
 
-  const mockOutletId = resolveMockOutletId(outlet);
-  const applyResolved = (resolved: Record<string, number[]>) =>
-    mockAudits
-      .filter((a) => a.outlet_id === mockOutletId)
-      .map((a) => {
-        const idxs = resolved[a.id] ?? [];
-        return {
-          ...a,
-          checklist_items: a.checklist_items.map((c, i) =>
-            idxs.includes(i) ? { ...c, pass: true } : c
-          ),
-        };
-      })
-      .sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1));
+  const applyResolved = useCallback((raw: ComplianceAudit[], resolved: Record<string, number[]>) =>
+    raw.map((a) => {
+      const idxs = resolved[a.id] ?? [];
+      return {
+        ...a,
+        checklist_items: a.checklist_items.map((c, i) => idxs.includes(i) ? { ...c, pass: true } : c),
+      };
+    }).sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1))
+  , []);
 
-  const [audits, setAudits] = useState(applyResolved({}));
+  const load = useCallback(async () => {
+    const { data } = await supabase
+      .from("compliance_audits")
+      .select("*")
+      .eq("outlet_id", outlet.id)
+      .order("audit_date", { ascending: false });
+    setAudits(applyResolved((data ?? []) as ComplianceAudit[], loadResolved()));
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [supabase, outlet.id, applyResolved]);
 
   useEffect(() => {
-    setAudits(applyResolved(loadResolved()));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [outlet.id]);
+    load();
+    const channel = supabase
+      .channel("portal-compliance-" + outlet.id)
+      .on("postgres_changes", { event: "*", schema: "public", table: "compliance_audits", filter: `outlet_id=eq.${outlet.id}` }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [load, supabase, outlet.id]);
 
   const toggleItem = (auditId: string, idx: number) => {
     const current = loadResolved();
@@ -50,7 +59,7 @@ export default function CompliancePage() {
     const next = list.includes(idx) ? list.filter((x) => x !== idx) : [...list, idx];
     const updated = { ...current, [auditId]: next };
     window.localStorage.setItem(storageKey, JSON.stringify(updated));
-    setAudits(applyResolved(updated));
+    load();
   };
 
   return (

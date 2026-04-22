@@ -1,61 +1,77 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
-import { mockAnnouncements, mockFranchisees } from "@/lib/mock-data";
 import { formatDate } from "@/lib/utils";
-import type { Announcement } from "@/lib/types";
+import type { Announcement, Franchisee } from "@/lib/types";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { useAuth } from "@/lib/auth";
 import { Send, Eye, X, Check, Clock, Mail } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
 
-// Deterministic hash → integer.
-function hash(s: string) {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return Math.abs(h);
-}
-
-// Deterministic per-announcement x franchisee read status.
-// Same inputs → same output, so refreshing doesn't scramble the numbers.
-function hasOpened(announcementId: string, franchiseeId: string) {
-  return hash(announcementId + ":" + franchiseeId) % 4 !== 0; // ~75% opened
-}
-function openedAt(announcementId: string, franchiseeId: string, publishAt: string) {
-  const base = new Date(publishAt).getTime();
-  const hoursLater = (hash(announcementId + franchiseeId) % 48) + 1;
-  return new Date(base + hoursLater * 3600_000).toISOString();
-}
-function recipientsFor(target_role: string | null, targetLabel?: string) {
-  // For "All franchisees" or a specific franchisee, we only list franchisees.
-  // For "All users" we'd include HQ too, but since there's no HQ-side inbox yet,
-  // we still list franchisees (HQ always sees everything in the admin console).
-  if (targetLabel && targetLabel !== "All users" && targetLabel !== "All franchisees") {
-    const picked = mockFranchisees.find((f) => f.business_name === targetLabel);
-    return picked ? [picked] : mockFranchisees;
-  }
-  return mockFranchisees;
-}
-
 export default function AdminAnnouncementsPage() {
   const toast = useToast();
-  const [list, setList] = useState<Announcement[]>(mockAnnouncements);
+  const { profile } = useAuth();
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const [list, setList] = useState<Announcement[]>([]);
+  const [franchisees, setFranchisees] = useState<Franchisee[]>([]);
+  const [reads, setReads] = useState<{ announcement_id: string; user_id: string; read_at: string }[]>([]);
+  const [profiles, setProfiles] = useState<{ id: string; franchisee_id: string | null }[]>([]);
   const [title, setTitle] = useState("");
-  // "all" = everyone, "franchisees" = all franchisees, or a franchisee id = that one only.
   const [target, setTarget] = useState<string>("all");
-  const targetLabel =
-    target === "all" ? "All users"
-    : target === "franchisees" ? "All franchisees"
-    : mockFranchisees.find((f) => f.id === target)?.business_name ?? "Custom";
   const [schedule, setSchedule] = useState("");
   const [preview, setPreview] = useState(false);
   const [openedAnnouncement, setOpenedAnnouncement] = useState<Announcement | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
 
+  const load = useCallback(async () => {
+    const [{ data: anns }, { data: fs }, { data: rs }, { data: ps }] = await Promise.all([
+      supabase.from("announcements").select("*").order("publish_at", { ascending: false }),
+      supabase.from("franchisees").select("*"),
+      supabase.from("announcement_reads").select("announcement_id, user_id, read_at"),
+      supabase.from("profiles").select("id, franchisee_id"),
+    ]);
+    setList((anns ?? []) as Announcement[]);
+    setFranchisees((fs ?? []) as Franchisee[]);
+    setReads((rs ?? []) as { announcement_id: string; user_id: string; read_at: string }[]);
+    setProfiles((ps ?? []) as { id: string; franchisee_id: string | null }[]);
+  }, [supabase]);
+
+  useEffect(() => {
+    load();
+    const channel = supabase
+      .channel("admin-announcements")
+      .on("postgres_changes", { event: "*", schema: "public", table: "announcements" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "announcement_reads" }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [load, supabase]);
+
+  const targetLabel =
+    target === "all" ? "All users"
+    : target === "franchisees" ? "All franchisees"
+    : franchisees.find((f) => f.id === target)?.business_name ?? "Custom";
+
+  // For a given announcement, figure out which profile ids count as "recipients"
+  // and whether each has a matching announcement_reads row.
+  const recipientProfileIds = useCallback((a: Announcement): string[] => {
+    // Target role null = everyone; franchisee = all franchisee profiles;
+    // specific franchisee (target_role=franchisee & target_outlet_id set) would
+    // narrow further, but this seed doesn't use target_outlet_id for that.
+    return profiles
+      .filter((p) => (a.target_role === null || a.target_role === "franchisee") && p.franchisee_id)
+      .map((p) => p.id);
+  }, [profiles]);
+
+  const hasOpened = useCallback((announcementId: string, userId: string) =>
+    reads.some((r) => r.announcement_id === announcementId && r.user_id === userId)
+  , [reads]);
+
   const exec = (cmd: string) => document.execCommand(cmd, false);
 
-  const publish = () => {
+  const publish = async () => {
     const body = bodyRef.current?.innerHTML ?? "";
     if (!title.trim()) {
       toast("error", "Please give the announcement a title.");
@@ -65,21 +81,21 @@ export default function AdminAnnouncementsPage() {
       toast("error", "Please write the announcement body.");
       return;
     }
-    const a: Announcement = {
-      id: "an-new-" + Date.now(),
+    const { error } = await supabase.from("announcements").insert({
       title,
       body,
       pinned: false,
       publish_at: schedule ? new Date(schedule).toISOString() : new Date().toISOString(),
-      target_role: target === "all" || target === "franchisees" ? (target === "franchisees" ? "franchisee" : null) : "franchisee",
-      target_label: targetLabel,
-    } as Announcement & { target_label?: string };
-    setList([a, ...list]);
+      target_role: target === "franchisees" || target !== "all" ? "franchisee" : null,
+      created_by: profile?.id ?? null,
+    });
+    if (error) { toast("error", `Publish failed: ${error.message}`); return; }
+    await load();
     setTitle("");
     if (bodyRef.current) bodyRef.current.innerHTML = "";
     setSchedule("");
     setPreview(false);
-    toast("success", `Announcement "${a.title}" queued.`);
+    toast("success", `Announcement "${title}" queued.`);
   };
 
   return (
@@ -124,7 +140,7 @@ export default function AdminAnnouncementsPage() {
                   <option value="all">All users (franchisees + HQ)</option>
                   <option value="franchisees">All franchisees</option>
                   <optgroup label="Specific franchisee">
-                    {mockFranchisees.map((f) => (
+                    {franchisees.map((f) => (
                       <option key={f.id} value={f.id}>{f.business_name} · {f.owner_name}</option>
                     ))}
                   </optgroup>
@@ -163,10 +179,10 @@ export default function AdminAnnouncementsPage() {
           <CardSubtitle>Click a row to see who's opened it.</CardSubtitle>
           <ul className="mt-3 space-y-2">
             {list.map((a) => {
-              const label = (a as Announcement & { target_label?: string }).target_label ?? (a.target_role ?? "all");
-              const recipients = recipientsFor(a.target_role, label);
-              const openedCount = recipients.filter((f) => hasOpened(a.id, f.id)).length;
-              const pct = recipients.length ? Math.round((openedCount / recipients.length) * 100) : 0;
+              const label = a.target_role ?? "all";
+              const recipientIds = recipientProfileIds(a);
+              const openedCount = recipientIds.filter((uid) => hasOpened(a.id, uid)).length;
+              const pct = recipientIds.length ? Math.round((openedCount / recipientIds.length) * 100) : 0;
               return (
                 <li key={a.id}>
                   <button
@@ -176,7 +192,7 @@ export default function AdminAnnouncementsPage() {
                     <div className="min-w-0">
                       <div className="truncate text-sm font-semibold">{a.title}</div>
                       <div className="text-[11px] text-[color:var(--color-ink-soft)]">
-                        {formatDate(a.publish_at)} · {label} · {openedCount}/{recipients.length} opened
+                        {formatDate(a.publish_at)} · {label} · {openedCount}/{recipientIds.length} opened
                       </div>
                     </div>
                     <Pill tone={pct >= 75 ? "success" : pct >= 40 ? "warning" : "danger"}>{pct}%</Pill>
@@ -191,6 +207,9 @@ export default function AdminAnnouncementsPage() {
       {openedAnnouncement && (
         <ReadReceiptsModal
           announcement={openedAnnouncement}
+          franchisees={franchisees}
+          profiles={profiles}
+          reads={reads}
           onClose={() => setOpenedAnnouncement(null)}
         />
       )}
@@ -199,17 +218,28 @@ export default function AdminAnnouncementsPage() {
 }
 
 function ReadReceiptsModal({
-  announcement,
-  onClose,
+  announcement, franchisees, profiles, reads, onClose,
 }: {
   announcement: Announcement;
+  franchisees: Franchisee[];
+  profiles: { id: string; franchisee_id: string | null }[];
+  reads: { announcement_id: string; user_id: string; read_at: string }[];
   onClose: () => void;
 }) {
-  const label = (announcement as Announcement & { target_label?: string }).target_label
-    ?? (announcement.target_role ?? "all");
-  const recipients = recipientsFor(announcement.target_role, label);
-  const openedList = recipients.filter((f) => hasOpened(announcement.id, f.id));
-  const pendingList = recipients.filter((f) => !hasOpened(announcement.id, f.id));
+  // One row per franchisee; opened = any user under that franchisee has a read row.
+  const readByFId = (fid: string) => reads.some((r) =>
+    r.announcement_id === announcement.id &&
+    profiles.some((p) => p.id === r.user_id && p.franchisee_id === fid)
+  );
+  const openedList = franchisees.filter((f) => readByFId(f.id));
+  const pendingList = franchisees.filter((f) => !readByFId(f.id));
+  const readAtFor = (fid: string): string | null => {
+    const match = reads.find((r) =>
+      r.announcement_id === announcement.id &&
+      profiles.some((p) => p.id === r.user_id && p.franchisee_id === fid)
+    );
+    return match?.read_at ?? null;
+  };
 
   return (
     <div
@@ -225,7 +255,7 @@ function ReadReceiptsModal({
             <div className="text-[11px] font-semibold uppercase tracking-wider text-[color:var(--color-brand-700)]">Read receipts</div>
             <h3 className="mt-0.5 truncate text-lg font-semibold">{announcement.title}</h3>
             <div className="mt-0.5 text-[12px] text-[color:var(--color-ink-soft)]">
-              Sent {formatDate(announcement.publish_at)} · Target: {label}
+              Sent {formatDate(announcement.publish_at)} · Target: {announcement.target_role ?? "all"}
             </div>
           </div>
           <button
@@ -266,7 +296,7 @@ function ReadReceiptsModal({
                     </div>
                     <div className="flex items-center gap-1.5 text-[11px] font-medium text-[color:var(--color-success)]">
                       <Check size={12} />
-                      {formatDate(openedAt(announcement.id, f.id, announcement.publish_at))}
+                      {readAtFor(f.id) ? formatDate(readAtFor(f.id)!) : "opened"}
                     </div>
                   </li>
                 ))}

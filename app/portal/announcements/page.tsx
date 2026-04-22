@@ -2,24 +2,48 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Pill } from "@/components/ui/Pill";
-import { mockAnnouncements } from "@/lib/mock-data";
-import type { Royalty } from "@/lib/types";
+import type { Royalty, Announcement } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useCurrentOutlet } from "@/lib/current-outlet";
+import { useAuth } from "@/lib/auth";
 import { formatDate, RM2, daysUntil } from "@/lib/utils";
 import { Pin, Calendar, Megaphone } from "lucide-react";
-import type { Announcement } from "@/lib/types";
 
 export default function AnnouncementsPage() {
   const { outlet } = useCurrentOutlet();
+  const { profile } = useAuth();
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [reads, setReads] = useState<Set<string>>(new Set());
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+
+  // Fetch announcements + read receipts + outstanding royalty for pinned card.
+  useEffect(() => {
+    (async () => {
+      const [{ data: ann }, { data: rds }] = await Promise.all([
+        supabase.from("announcements").select("*").order("publish_at", { ascending: false }),
+        profile?.id
+          ? supabase.from("announcement_reads").select("announcement_id").eq("user_id", profile.id)
+          : Promise.resolve({ data: [] as { announcement_id: string }[] }),
+      ]);
+      setAnnouncements((ann ?? []) as Announcement[]);
+      setReads(new Set((rds ?? []).map((r: { announcement_id: string }) => r.announcement_id)));
+    })();
+    if (!profile?.id) return;
+    const channel = supabase
+      .channel("portal-announcements-" + profile.id)
+      .on("postgres_changes", { event: "*", schema: "public", table: "announcements" }, async () => {
+        const { data } = await supabase.from("announcements").select("*").order("publish_at", { ascending: false });
+        setAnnouncements((data ?? []) as Announcement[]);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [supabase, profile?.id]);
 
   // Fetch the nearest outstanding royalty for THIS outlet from Supabase so
   // the pinned card matches what /portal/royalty and HQ actually see.
   const [outstandingRoyalties, setOutstandingRoyalties] = useState<Royalty[]>([]);
   const [verifiedByRoyalty, setVerifiedByRoyalty] = useState<Record<string, boolean>>({});
   useEffect(() => {
-    const supabase = createSupabaseBrowserClient();
     (async () => {
       const { data: roys } = await supabase
         .from("royalties")
@@ -41,20 +65,27 @@ export default function AnnouncementsPage() {
         setVerifiedByRoyalty(v);
       }
     })();
-  }, [outlet.id]);
+  }, [outlet.id, supabase]);
   const livePinned = useMemo(
     () => outstandingRoyalties.find((r) => !verifiedByRoyalty[r.id]) ?? null,
     [outstandingRoyalties, verifiedByRoyalty]
   );
 
-  // Hide the forever-pinned welcome; everything else still flows normally.
-  const otherAnnouncements = mockAnnouncements
-    .filter((a) => a.id !== "an-1")
+  const otherAnnouncements = announcements
     .sort((a, b) => (a.publish_at < b.publish_at ? 1 : -1));
   const pinned = otherAnnouncements.filter((a) => a.pinned);
   const rest = otherAnnouncements.filter((a) => !a.pinned);
 
-  const markRead = (id: string) => setReads((prev) => new Set([...prev, id]));
+  const markRead = async (id: string) => {
+    if (reads.has(id)) return;
+    setReads((prev) => new Set([...prev, id]));
+    if (profile?.id) {
+      await supabase.from("announcement_reads").insert({
+        announcement_id: id,
+        user_id: profile.id,
+      });
+    }
+  };
 
   const renderCard = (a: Announcement) => {
     const unread = !reads.has(a.id);

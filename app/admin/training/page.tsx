@@ -1,47 +1,81 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
-import { mockTrainingModules, mockOutlets, mockFranchisees } from "@/lib/mock-data";
-import type { TrainingModule } from "@/lib/types";
+import type { TrainingModule, TrainingProgress, Outlet, Franchisee, Profile } from "@/lib/types";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { UploadCloud, Check, Clock, X as XIcon, Bell, Mail } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
 
-// Deterministic hash → integer. Same inputs always give the same output.
-function hash(s: string) {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return Math.abs(h);
-}
 type Cell = "passed" | "in_progress" | "not_started";
-function cellFor(moduleId: string, outletId: string): Cell {
-  const n = hash(moduleId + ":" + outletId) % 100;
-  if (n < 60) return "passed";
-  if (n < 85) return "in_progress";
-  return "not_started";
-}
-function scoreFor(moduleId: string, outletId: string) {
-  return 72 + (hash(moduleId + outletId) % 25);
-}
 
 export default function AdminTrainingPage() {
   const toast = useToast();
-  const [modules, setModules] = useState<TrainingModule[]>(mockTrainingModules);
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const [modules, setModules] = useState<TrainingModule[]>([]);
+  const [progress, setProgress] = useState<TrainingProgress[]>([]);
+  const [outlets, setOutlets] = useState<Outlet[]>([]);
+  const [franchiseesList, setFranchiseesList] = useState<Franchisee[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const outlets = mockOutlets;
+  const load = useCallback(async () => {
+    const [{ data: mods }, { data: prog }, { data: outs }, { data: fs }, { data: profs }] = await Promise.all([
+      supabase.from("training_modules").select("*"),
+      supabase.from("training_progress").select("*"),
+      supabase.from("outlets").select("*").order("outlet_code"),
+      supabase.from("franchisees").select("*"),
+      supabase.from("profiles").select("*"),
+    ]);
+    setModules((mods ?? []) as TrainingModule[]);
+    setProgress((prog ?? []) as TrainingProgress[]);
+    setOutlets((outs ?? []) as Outlet[]);
+    setFranchiseesList((fs ?? []) as Franchisee[]);
+    setProfiles((profs ?? []) as Profile[]);
+  }, [supabase]);
+
+  useEffect(() => {
+    load();
+    const channel = supabase
+      .channel("admin-training")
+      .on("postgres_changes", { event: "*", schema: "public", table: "training_progress" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "training_modules" }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [load, supabase]);
+
+  // For each outlet we look at its franchisee's users and their training_progress.
+  const cellFor = useCallback((moduleId: string, outletId: string): Cell => {
+    const outlet = outlets.find((o) => o.id === outletId);
+    if (!outlet) return "not_started";
+    const users = profiles.filter((p) => p.franchisee_id === outlet.franchisee_id);
+    if (users.length === 0) return "not_started";
+    const rel = progress.filter((p) => p.module_id === moduleId && users.some((u) => u.id === p.user_id));
+    if (rel.some((r) => r.completed_at && r.score !== null)) return "passed";
+    if (rel.some((r) => r.attempts > 0)) return "in_progress";
+    return "not_started";
+  }, [outlets, profiles, progress]);
+
+  const scoreFor = useCallback((moduleId: string, outletId: string): number => {
+    const outlet = outlets.find((o) => o.id === outletId);
+    if (!outlet) return 0;
+    const users = profiles.filter((p) => p.franchisee_id === outlet.franchisee_id);
+    const rel = progress.filter((p) => p.module_id === moduleId && users.some((u) => u.id === p.user_id) && p.score !== null);
+    if (rel.length === 0) return 0;
+    return Math.max(...rel.map((r) => r.score ?? 0));
+  }, [outlets, profiles, progress]);
 
   // Per-module completion = % of outlets with "passed".
   const moduleCompletion = useMemo(
     () =>
       modules.map((m) => {
         const passed = outlets.filter((o) => cellFor(m.id, o.id) === "passed").length;
-        return { id: m.id, title: m.title, passed, total: outlets.length, pct: Math.round((passed / outlets.length) * 100) };
+        return { id: m.id, title: m.title, passed, total: outlets.length, pct: outlets.length ? Math.round((passed / outlets.length) * 100) : 0 };
       }),
-    [modules, outlets]
+    [modules, outlets, cellFor]
   );
 
   // Overall completion = avg across modules.
@@ -54,7 +88,7 @@ export default function AdminTrainingPage() {
     () =>
       outlets.map((o) => {
         const passedCount = modules.filter((m) => cellFor(m.id, o.id) === "passed").length;
-        const franchisee = mockFranchisees.find((f) => f.id === o.franchisee_id);
+        const franchisee = franchiseesList.find((f) => f.id === o.franchisee_id);
         return {
           outlet: o,
           franchisee,
@@ -63,22 +97,20 @@ export default function AdminTrainingPage() {
           pct: Math.round((passedCount / Math.max(1, modules.length)) * 100),
         };
       }),
-    [modules, outlets]
+    [modules, outlets, franchiseesList, cellFor]
   );
 
-  const addFile = (name: string) => {
-    setModules((prev) => [
-      {
-        id: "t-new-" + Date.now(),
-        title: name.replace(/\.[^.]+$/, ""),
-        description: "Newly uploaded — edit metadata below.",
-        video_url: "#",
-        materials_url: null,
-        category: "Operations",
-        passing_score: 80,
-      },
-      ...prev,
-    ]);
+  const addFile = async (name: string) => {
+    const { error } = await supabase.from("training_modules").insert({
+      title: name.replace(/\.[^.]+$/, ""),
+      description: "Newly uploaded — edit metadata below.",
+      video_url: "#",
+      materials_url: null,
+      category: "Operations",
+      passing_score: 80,
+    });
+    if (error) { toast("error", `Upload failed: ${error.message}`); return; }
+    await load();
     toast("success", `Uploaded "${name}" as a new draft module.`);
   };
 
