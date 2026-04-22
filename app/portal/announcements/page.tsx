@@ -43,12 +43,18 @@ export default function AnnouncementsPage() {
         .order("created_at", { ascending: false })
         .limit(50);
       setNotifications((data ?? []) as Notification[]);
-      // Mark everything still unread as read now that the user is on this page.
-      const unreadIds = (data ?? []).filter((n: Notification) => !n.read_at).map((n: Notification) => n.id);
-      if (unreadIds.length > 0) {
+      // Only auto-clear notifications that don't require action (plain info).
+      // Anything needing accept/propose/acknowledge/on-it/done stays unread
+      // in the bell until the franchisee actually takes the action.
+      const actionable = (k: string) =>
+        k === "coaching_call" || k === "warning_notice" || k.startsWith("nudge_");
+      const autoClearIds = (data ?? [])
+        .filter((n: Notification) => !n.read_at && (!actionable(n.kind) || !!n.responded_at))
+        .map((n: Notification) => n.id);
+      if (autoClearIds.length > 0) {
         await supabase.from("notifications")
           .update({ read_at: new Date().toISOString() })
-          .in("id", unreadIds);
+          .in("id", autoClearIds);
       }
     };
     refresh();
@@ -219,8 +225,10 @@ function NotificationCard({ n }: { n: Notification }) {
 
   const respond = async (status: string, note?: string) => {
     setBusy(true);
+    // Clear the bell only when the franchisee actually acts on the notification.
+    const now = new Date().toISOString();
     await supabase.from("notifications")
-      .update({ status, response_note: note ?? null, responded_at: new Date().toISOString() })
+      .update({ status, response_note: note ?? null, responded_at: now, read_at: now })
       .eq("id", n.id);
     setBusy(false);
     setProposing(false);
