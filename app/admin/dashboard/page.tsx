@@ -7,7 +7,6 @@ import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { Stagger, StaggerItem } from "@/components/ui/Stagger";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
 import { mockAudits, mockFranchisees, mockOutlets } from "@/lib/mock-data";
 import type { Royalty } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -385,26 +384,26 @@ export default function AdminDashboard() {
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <div>
             <CardTitle>Royalty collection — last 3 months</CardTitle>
-            <CardSubtitle>Green = paid · Red = still owed. Grid below shows which outlet is which.</CardSubtitle>
+            <CardSubtitle>Green = paid · Red = still owed, per outlet per month.</CardSubtitle>
           </div>
-        </div>
-
-        {/* Stacked bars: paid vs outstanding per month */}
-        <div className="mt-4 h-56">
-          <ResponsiveContainer>
-            <BarChart data={barData}>
-              <CartesianGrid strokeDasharray="2 4" stroke="#F0DCC2" vertical={false} />
-              <XAxis dataKey="month" stroke="#6B4A35" fontSize={12} />
-              <YAxis stroke="#6B4A35" fontSize={12} tickFormatter={(v) => "RM " + (v/1000).toFixed(0) + "k"} />
-              <Tooltip
-                contentStyle={{ borderRadius: 10, border: "1px solid rgba(232,89,12,0.25)", fontSize: 12 }}
-                formatter={(v: number) => RM(v)}
-              />
-              <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="Paid" stackId="r" fill="#2e8840" radius={[0, 0, 0, 0]} />
-              <Bar dataKey="Outstanding" stackId="r" fill="#c64545" radius={[8, 8, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          {(() => {
+            const paid = barData.reduce((s, m) => s + m.Paid, 0);
+            const owed = barData.reduce((s, m) => s + m.Outstanding, 0);
+            return (
+              <div className="flex gap-3 text-[12px]">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-[color:var(--color-success)]" />
+                  <span className="text-[color:var(--color-ink-soft)]">Paid</span>
+                  <span className="font-semibold">RM {paid.toLocaleString()}</span>
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-[color:var(--color-danger)]" />
+                  <span className="text-[color:var(--color-ink-soft)]">Outstanding</span>
+                  <span className="font-semibold">RM {owed.toLocaleString()}</span>
+                </span>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Per-outlet collection grid */}
