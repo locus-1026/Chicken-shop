@@ -193,9 +193,17 @@ function PortalShell({ children }: { children: React.ReactNode }) {
     }
     setSupportAlert(supportCount);
 
-    // News alert: announcements not yet read.
+    // News alert: unread announcements + direct HQ notifications that still
+    // need action. Actionable notifications (coaching, notices, nudges) only
+    // clear when the franchisee clicks a response button — matches bell logic.
     const readIds = new Set(((reads ?? []) as { announcement_id: string }[]).map((r) => r.announcement_id));
-    setNewsAlert(((anns ?? []) as { id: string }[]).filter((a) => !readIds.has(a.id)).length);
+    const unreadAnns = ((anns ?? []) as { id: string }[]).filter((a) => !readIds.has(a.id)).length;
+    const { data: pendingNotifs } = await supabase
+      .from("notifications")
+      .select("id, kind, read_at, responded_at")
+      .eq("recipient_id", profile.id)
+      .is("read_at", null);
+    setNewsAlert(unreadAnns + (pendingNotifs?.length ?? 0));
 
     // Sales alert: action needed if today's sales report hasn't been
     // submitted for this outlet yet. Badge drops to 0 the moment the
@@ -221,6 +229,7 @@ function PortalShell({ children }: { children: React.ReactNode }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "announcements" }, recompute)
       .on("postgres_changes", { event: "*", schema: "public", table: "announcement_reads" }, recompute)
       .on("postgres_changes", { event: "*", schema: "public", table: "sales_reports" }, recompute)
+      .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `recipient_id=eq.${profile.id}` }, recompute)
       .subscribe();
     // Also listen for "page visited" custom events so badges clear the instant
     // the franchisee opens the relevant page.
