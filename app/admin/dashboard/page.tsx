@@ -15,22 +15,39 @@ import { RM, monthLabel, daysUntil } from "@/lib/utils";
 import { Trophy, AlertTriangle, PhoneCall, FileWarning } from "lucide-react";
 import { ActionModal, type ActionKind } from "@/components/ui/ActionModal";
 import { notifyFranchisee } from "@/lib/notify";
+import type { Franchisee } from "@/lib/types";
 
 export default function AdminDashboard() {
   const toast = useToast();
-  const [actionTarget, setActionTarget] = useState<{ outletCode: string; ownerName: string; kind: ActionKind; franchiseeId: string } | null>(null);
+  const [actionTarget, setActionTarget] = useState<{ outletCode: string; ownerName: string; kind: ActionKind; businessName: string } | null>(null);
   // Real royalties + verified-proof map, so dashboard numbers agree with
   // /admin/royalties and the franchisee portal.
   const [royalties, setRoyalties] = useState<Royalty[]>([]);
   const [verifiedByRoyalty, setVerifiedByRoyalty] = useState<Record<string, boolean>>({});
+  // Real franchisees from Supabase — we need the uuid to actually send a
+  // notification (mockFranchisees ids like "f-1" don't link to anything).
+  const [realFranchisees, setRealFranchisees] = useState<Franchisee[]>([]);
+  // Remember which franchisees HQ has already coached/noticed (localStorage so
+  // it persists across sessions). Shown as a small pill on the "Needs attention"
+  // row so HQ knows not to double-action.
+  const [actioned, setActioned] = useState<Record<string, { coach?: string; notice?: string }>>({});
 
   useEffect(() => {
+    // Restore actioned watermarks from localStorage.
+    if (typeof window !== "undefined") {
+      const raw = window.localStorage.getItem("cc.admin.actioned");
+      if (raw) { try { setActioned(JSON.parse(raw)); } catch { /* ignore */ } }
+    }
     const supabase = createSupabaseBrowserClient();
     (async () => {
-      const { data: roys } = await supabase
-        .from("royalties")
-        .select("id, outlet_id, gross_sales, royalty_amount, marketing_fee, due_date, paid_at, status, period:billing_period")
-        .order("billing_period", { ascending: false });
+      const [{ data: roys }, { data: fs }] = await Promise.all([
+        supabase
+          .from("royalties")
+          .select("id, outlet_id, gross_sales, royalty_amount, marketing_fee, due_date, paid_at, status, period:billing_period")
+          .order("billing_period", { ascending: false }),
+        supabase.from("franchisees").select("*"),
+      ]);
+      setRealFranchisees((fs ?? []) as Franchisee[]);
       const rs = (roys ?? []) as Royalty[];
       setRoyalties(rs);
       if (rs.length > 0) {
@@ -174,12 +191,25 @@ export default function AdminDashboard() {
           </CardTitle>
           <CardSubtitle>Not shame — just where HQ should focus.</CardSubtitle>
           <ul className="mt-3 space-y-2">
-            {bottom.map((x) => (
+            {bottom.map((x) => {
+              const real = realFranchisees.find((f) => f.business_name === x.franchisee.business_name);
+              const history = real ? actioned[real.id] : undefined;
+              return (
               <li key={x.outlet.id} className="rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium">{x.outlet.outlet_code} · {x.outlet.location}</div>
                     <div className="text-[12px] text-[color:var(--color-ink-soft)]">Owner {x.franchisee.owner_name}</div>
+                    {history?.coach && (
+                      <div className="mt-0.5 text-[11px] font-medium text-[color:var(--color-success)]">
+                        ✓ Coaching scheduled · {new Date(history.coach).toLocaleDateString()}
+                      </div>
+                    )}
+                    {history?.notice && (
+                      <div className="mt-0.5 text-[11px] font-medium text-[color:var(--color-danger)]">
+                        ✓ Warning notice issued · {new Date(history.notice).toLocaleDateString()}
+                      </div>
+                    )}
                   </div>
                   <Pill tone={x.tone === "danger" ? "danger" : x.tone === "warning" ? "warning" : "success"}>
                     {Math.round(x.pct)}% of target
@@ -189,7 +219,7 @@ export default function AdminDashboard() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => setActionTarget({ outletCode: x.outlet.outlet_code, ownerName: x.franchisee.owner_name, kind: "coach", franchiseeId: x.franchisee.id })}
+                    onClick={() => setActionTarget({ outletCode: x.outlet.outlet_code, ownerName: x.franchisee.owner_name, kind: "coach", businessName: x.franchisee.business_name })}
                   >
                     <PhoneCall size={12} /> Schedule coaching call
                   </Button>
@@ -197,14 +227,15 @@ export default function AdminDashboard() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => setActionTarget({ outletCode: x.outlet.outlet_code, ownerName: x.franchisee.owner_name, kind: "notice", franchiseeId: x.franchisee.id })}
+                      onClick={() => setActionTarget({ outletCode: x.outlet.outlet_code, ownerName: x.franchisee.owner_name, kind: "notice", businessName: x.franchisee.business_name })}
                     >
                       <FileWarning size={12} /> Issue warning notice
                     </Button>
                   )}
                 </div>
               </li>
-            ))}
+              );
+            })}
           </ul>
         </Card>
       </div>
@@ -217,14 +248,38 @@ export default function AdminDashboard() {
           onClose={() => setActionTarget(null)}
           onConfirm={async (summary) => {
             const supabase = createSupabaseBrowserClient();
-            await notifyFranchisee(supabase, actionTarget.franchiseeId, {
-              kind: actionTarget.kind === "coach" ? "coaching_call" : "warning_notice",
-              title: actionTarget.kind === "coach"
+            // Map the mock franchisee to a real Supabase franchisee by
+            // business_name (seed data aligns the two on the same business_name).
+            const target = actionTarget;
+            const real = realFranchisees.find((f) => f.business_name === target.businessName);
+            if (!real) {
+              toast("error", "Couldn't find that franchisee in the DB — notification not sent.");
+              return;
+            }
+            const { error } = await notifyFranchisee(supabase, real.id, {
+              kind: target.kind === "coach" ? "coaching_call" : "warning_notice",
+              title: target.kind === "coach"
                 ? "HQ · Coaching call scheduled"
                 : "HQ · Warning notice issued",
               body: summary,
               link: "/portal",
             });
+            if (error) {
+              toast("error", "Notification failed: " + (error as Error).message);
+              return;
+            }
+            // Remember we actioned this franchisee so the card shows "Coached today".
+            const next = {
+              ...actioned,
+              [real.id]: {
+                ...actioned[real.id],
+                [target.kind === "coach" ? "coach" : "notice"]: new Date().toISOString(),
+              },
+            };
+            setActioned(next);
+            if (typeof window !== "undefined") {
+              window.localStorage.setItem("cc.admin.actioned", JSON.stringify(next));
+            }
             setActionTarget(null);
             toast("success", summary);
           }}

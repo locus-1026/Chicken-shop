@@ -465,7 +465,18 @@ export default function FranchiseeDetailPage() {
           onClose={() => setAction(null)}
           onConfirm={async (summary) => {
             const supabase = createSupabaseBrowserClient();
-            await notifyFranchisee(supabase, franchisee.id, {
+            // Mock franchisee.id ("f-1") won't match; resolve to the real uuid
+            // by business_name (seed data keeps both in sync).
+            const { data: realRow } = await supabase
+              .from("franchisees")
+              .select("id")
+              .eq("business_name", franchisee.business_name)
+              .maybeSingle();
+            if (!realRow?.id) {
+              toast("error", "Couldn't find that franchisee in the DB — notification not sent.");
+              return;
+            }
+            const { error } = await notifyFranchisee(supabase, realRow.id, {
               kind: action === "coach" ? "coaching_call" : "warning_notice",
               title: action === "coach"
                 ? "HQ · Coaching call scheduled"
@@ -473,6 +484,10 @@ export default function FranchiseeDetailPage() {
               body: summary,
               link: "/portal",
             });
+            if (error) {
+              toast("error", "Notification failed: " + (error as Error).message);
+              return;
+            }
             setAction(null);
             toast("success", summary);
           }}
