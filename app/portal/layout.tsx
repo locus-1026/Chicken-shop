@@ -102,6 +102,7 @@ function PortalShell({ children }: { children: React.ReactNode }) {
   const [supplyAlert, setSupplyAlert] = useState(0);
   const [supportAlert, setSupportAlert] = useState(0);
   const [newsAlert, setNewsAlert] = useState(0);
+  const [salesAlert, setSalesAlert] = useState(0); // 1 if today's sales not yet submitted
 
   const recompute = useCallback(async () => {
     if (!outlet || !profile?.id) return;
@@ -195,6 +196,16 @@ function PortalShell({ children }: { children: React.ReactNode }) {
     // News alert: announcements not yet read.
     const readIds = new Set(((reads ?? []) as { announcement_id: string }[]).map((r) => r.announcement_id));
     setNewsAlert(((anns ?? []) as { id: string }[]).filter((a) => !readIds.has(a.id)).length);
+
+    // Sales alert: action needed if today's sales report hasn't been
+    // submitted for this outlet yet. Badge drops to 0 the moment the
+    // franchisee submits today's numbers on /portal/sales.
+    const { count: todaySales } = await supabase
+      .from("sales_reports")
+      .select("id", { count: "exact", head: true })
+      .eq("outlet_id", outlet.id)
+      .eq("report_date", today);
+    setSalesAlert((todaySales ?? 0) === 0 ? 1 : 0);
   }, [supabase, outlet, profile?.id]);
 
   useEffect(() => {
@@ -209,6 +220,7 @@ function PortalShell({ children }: { children: React.ReactNode }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "ticket_messages" }, recompute)
       .on("postgres_changes", { event: "*", schema: "public", table: "announcements" }, recompute)
       .on("postgres_changes", { event: "*", schema: "public", table: "announcement_reads" }, recompute)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sales_reports" }, recompute)
       .subscribe();
     // Also listen for "page visited" custom events so badges clear the instant
     // the franchisee opens the relevant page.
@@ -226,7 +238,7 @@ function PortalShell({ children }: { children: React.ReactNode }) {
     () => [
       { href: "/portal",               label: "Home",       icon: <LayoutDashboard size={18} /> },
       { href: "/portal/calendar",      label: "Calendar",   icon: <CalendarIcon size={18} /> },
-      { href: "/portal/sales",         label: "Sales",      icon: <Receipt size={18} /> },
+      { href: "/portal/sales",         label: "Sales",      icon: <Receipt size={18} />, badge: salesAlert },
       { href: "/portal/royalty",       label: "Royalty",    icon: <Wallet size={18} />, badge: royaltyAlert },
       { href: "/portal/supplies",      label: "Supplies",   icon: <ShoppingBasket size={18} />, badge: supplyAlert },
       { href: "/portal/training",      label: "Training",   icon: <GraduationCap size={18} /> },
@@ -235,7 +247,7 @@ function PortalShell({ children }: { children: React.ReactNode }) {
       { href: "/portal/support",       label: "Help",       icon: <LifeBuoy size={18} />, badge: supportAlert },
       { href: "/portal/announcements", label: "News",       icon: <Megaphone size={18} />, badge: newsAlert },
     ],
-    [royaltyAlert, supplyAlert, supportAlert, newsAlert]
+    [royaltyAlert, supplyAlert, supportAlert, newsAlert, salesAlert]
   );
 
   if (!outlet || !franchisee) {
