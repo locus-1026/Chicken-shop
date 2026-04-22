@@ -83,6 +83,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
         { data: proofRows },
         { data: ticketRows },
         { data: auditRows },
+        { data: outletRows },
       ] = await Promise.all([
         supabase
           .from("sales_reports")
@@ -102,11 +103,20 @@ function AdminShell({ children }: { children: React.ReactNode }) {
         supabase
           .from("compliance_audits")
           .select("risk_flag"),
+        supabase
+          .from("outlets")
+          .select("id, status")
+          .eq("status", "active"),
       ]);
-      // Sales badge: today's reports submitted after admin last opened /admin/sales.
-      const salesNew = ((salesRows ?? []) as { id: string; report_date: string }[])
-        .filter((r) => r.report_date > salesSeen).length;
-      setPendingSales(salesNew);
+      // Sales badge: number of active outlets that have NOT yet submitted
+      // today. Matches the "NEEDS ACTION" cards on /admin/sales.
+      const submittedOutletIds = new Set(
+        ((salesRows ?? []) as { outlet_id: string }[]).map((r) => r.outlet_id)
+      );
+      const activeOutlets = (outletRows ?? []) as { id: string }[];
+      const pendingOutlets = activeOutlets.filter((o) => !submittedOutletIds.has(o.id)).length;
+      setPendingSales(pendingOutlets);
+      void salesSeen; // no longer used; kept in scope for future diff-based UX
       setPendingSupplies(supplyCount ?? 0);
       const pending = (proofRows ?? []).filter(
         (p: { verified_at: string | null; rejected_at: string | null }) => !p.verified_at && !p.rejected_at
