@@ -7,7 +7,7 @@ import { Pill } from "@/components/ui/Pill";
 import type { TrainingModule, TrainingProgress, Outlet, Franchisee, Profile } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { notifyFranchisee, notifyAllFranchisees } from "@/lib/notify";
-import { UploadCloud, Check, Clock, X as XIcon, Bell, Mail } from "lucide-react";
+import { UploadCloud, Check, Clock, X as XIcon, Bell, Mail, Plus, Pencil, Trash2 } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
 
 type Cell = "passed" | "in_progress" | "not_started";
@@ -22,6 +22,8 @@ export default function AdminTrainingPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Module editor modal — holds the row being edited, or `{}` for a new row.
+  const [editing, setEditing] = useState<Partial<TrainingModule> | null>(null);
 
   const load = useCallback(async () => {
     const [{ data: mods }, { data: prog }, { data: outs }, { data: fs }, { data: profs }] = await Promise.all([
@@ -100,6 +102,39 @@ export default function AdminTrainingPage() {
       }),
     [modules, outlets, franchiseesList, cellFor]
   );
+
+  // Create (no id) or update (id present) a module from the editor modal.
+  const saveModule = async (m: Partial<TrainingModule>) => {
+    if (!m.title || !m.title.trim()) { toast("error", "Title is required."); return; }
+    const payload = {
+      title: m.title.trim(),
+      description: m.description ?? "",
+      video_url: m.video_url || null,
+      materials_url: m.materials_url || null,
+      category: m.category || "Operations",
+      passing_score: typeof m.passing_score === "number" ? m.passing_score : 80,
+    };
+    if (m.id) {
+      const { error } = await supabase.from("training_modules").update(payload).eq("id", m.id);
+      if (error) { toast("error", `Save failed: ${error.message}`); return; }
+      toast("success", `Updated "${payload.title}".`);
+    } else {
+      const { error } = await supabase.from("training_modules").insert(payload);
+      if (error) { toast("error", `Create failed: ${error.message}`); return; }
+      toast("success", `Added "${payload.title}".`);
+    }
+    setEditing(null);
+    await load();
+  };
+
+  const deleteModule = async (id: string, title: string) => {
+    if (!confirm(`Delete "${title}"? Franchisee progress for this module will be lost.`)) return;
+    const { error } = await supabase.from("training_modules").delete().eq("id", id);
+    if (error) { toast("error", `Delete failed: ${error.message}`); return; }
+    toast("info", `Deleted "${title}".`);
+    setEditing(null);
+    await load();
+  };
 
   const addFile = async (name: string) => {
     const { error } = await supabase.from("training_modules").insert({
@@ -299,6 +334,15 @@ export default function AdminTrainingPage() {
       </Card>
 
       <Card className="overflow-x-auto p-0">
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
+          <div>
+            <CardTitle>Training modules</CardTitle>
+            <CardSubtitle>Click a row to edit · add new modules here.</CardSubtitle>
+          </div>
+          <Button size="sm" onClick={() => setEditing({ category: "Operations", passing_score: 80 })}>
+            <Plus size={14} /> Add module
+          </Button>
+        </div>
         <table className="w-full text-sm">
           <thead className="bg-[color:var(--color-brand-50)] text-left text-[12px] uppercase tracking-wide text-[color:var(--color-brand-700)]">
             <tr>
@@ -306,11 +350,16 @@ export default function AdminTrainingPage() {
               <th className="px-4 py-3">Category</th>
               <th className="px-4 py-3">Passing</th>
               <th className="px-4 py-3">Assets</th>
+              <th className="px-4 py-3"></th>
             </tr>
           </thead>
           <tbody>
             {modules.map((m) => (
-              <tr key={m.id} className="border-t border-[color:var(--color-border)]">
+              <tr
+                key={m.id}
+                onClick={() => setEditing(m)}
+                className="cursor-pointer border-t border-[color:var(--color-border)] hover:bg-[color:var(--color-brand-50)]/40"
+              >
                 <td className="px-4 py-3">
                   <div className="font-medium">{m.title}</div>
                   <div className="text-[12px] text-[color:var(--color-ink-soft)]">{m.description}</div>
@@ -321,12 +370,152 @@ export default function AdminTrainingPage() {
                   {m.video_url && <Pill tone="neutral">video</Pill>}
                   {m.materials_url && <Pill tone="neutral">pdf</Pill>}
                 </td>
+                <td className="px-4 py-3">
+                  <span className="inline-flex items-center gap-1 text-[12px] text-[color:var(--color-brand-700)]">
+                    <Pencil size={12} /> Edit
+                  </span>
+                </td>
               </tr>
             ))}
+            {modules.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-10 text-center text-sm text-[color:var(--color-ink-soft)]">
+                  No training modules yet. Click <b>+ Add module</b> to create one.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </Card>
+
+      {editing && (
+        <ModuleEditor
+          initial={editing}
+          onClose={() => setEditing(null)}
+          onSave={saveModule}
+          onDelete={deleteModule}
+        />
+      )}
     </div>
+  );
+}
+
+function ModuleEditor({
+  initial, onClose, onSave, onDelete,
+}: {
+  initial: Partial<TrainingModule>;
+  onClose: () => void;
+  onSave: (m: Partial<TrainingModule>) => Promise<void>;
+  onDelete: (id: string, title: string) => Promise<void>;
+}) {
+  const [form, setForm] = useState<Partial<TrainingModule>>(initial);
+  const isNew = !initial.id;
+  const CATEGORIES = ["Operations", "Compliance", "Technology", "Service", "Brand"];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-[20px] bg-white shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-[color:var(--color-border)] p-5">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-[color:var(--color-brand-700)]">
+              {isNew ? "New module" : "Edit module"}
+            </div>
+            <h2 className="mt-0.5 text-lg font-semibold">{form.title || "Untitled module"}</h2>
+          </div>
+          <button onClick={onClose} className="rounded-full p-1.5 text-[color:var(--color-ink-soft)] hover:bg-[color:var(--color-brand-50)] hover:text-[color:var(--color-brand-700)]" aria-label="Close">
+            <XIcon size={18} />
+          </button>
+        </div>
+
+        <div className="flex-1 space-y-4 overflow-y-auto p-5">
+          <Field label="Title">
+            <input
+              value={form.title ?? ""}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
+              placeholder="e.g. Food Safety & Hygiene SOP"
+              className="w-full rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2 text-[14px]"
+            />
+          </Field>
+          <Field label="Description">
+            <textarea
+              value={form.description ?? ""}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              rows={3}
+              placeholder="Short description of what the module covers."
+              className="w-full rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2 text-[14px]"
+            />
+          </Field>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Category">
+              <select
+                value={form.category ?? "Operations"}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+                className="w-full rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2 text-[14px]"
+              >
+                {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </Field>
+            <Field label="Passing score (%)">
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={form.passing_score ?? 80}
+                onChange={(e) => setForm({ ...form, passing_score: Number(e.target.value) })}
+                className="w-full rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2 text-[14px]"
+              />
+            </Field>
+          </div>
+          <Field label="Video URL">
+            <input
+              value={form.video_url ?? ""}
+              onChange={(e) => setForm({ ...form, video_url: e.target.value })}
+              placeholder="https://… (or # if none)"
+              className="w-full rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2 text-[14px]"
+            />
+          </Field>
+          <Field label="Materials URL (PDF, etc.)">
+            <input
+              value={form.materials_url ?? ""}
+              onChange={(e) => setForm({ ...form, materials_url: e.target.value })}
+              placeholder="Optional"
+              className="w-full rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2 text-[14px]"
+            />
+          </Field>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 border-t border-[color:var(--color-border)] p-4">
+          {!isNew && initial.id ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onDelete(initial.id!, initial.title ?? "this module")}
+              className="!text-[color:var(--color-danger)] hover:!border-[color:var(--color-danger)]"
+            >
+              <Trash2 size={14} /> Delete
+            </Button>
+          ) : <span />}
+          <div className="flex gap-2">
+            <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button size="sm" onClick={() => onSave(form)}>
+              <Check size={14} /> {isNew ? "Create module" : "Save changes"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="text-[12px] font-medium text-[color:var(--color-ink-soft)]">{label}</span>
+      <div className="mt-1">{children}</div>
+    </label>
   );
 }
 
