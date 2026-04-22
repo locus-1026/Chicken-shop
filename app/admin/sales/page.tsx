@@ -41,7 +41,7 @@ export default function AdminSalesPage() {
   // Pull every sales report across every outlet (RLS allows admin to see all).
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
-    (async () => {
+    const load = async () => {
       const [{ data: reports, error }, { data: outletData }, { data: franchiseeData }] = await Promise.all([
         supabase
           .from("sales_reports")
@@ -58,7 +58,12 @@ export default function AdminSalesPage() {
       setAllReports((reports ?? []) as SalesReport[]);
       setOutlets((outletData ?? []) as Outlet[]);
       setFranchisees((franchiseeData ?? []) as Franchisee[]);
-    })();
+    };
+    load();
+    const id = setInterval(load, 15000);
+    const onFocus = () => load();
+    window.addEventListener("focus", onFocus);
+    return () => { clearInterval(id); window.removeEventListener("focus", onFocus); };
   }, [toast]);
 
   const today = new Date().toISOString().slice(0, 10);

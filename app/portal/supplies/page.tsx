@@ -55,7 +55,13 @@ export default function SuppliesPage() {
     setHistory(orderRows.map((o) => ({ ...o, items: byOrder[o.id] ?? [] })));
   }, [supabase, outlet.id, toast]);
 
-  useEffect(() => { loadHistory(); }, [loadHistory]);
+  useEffect(() => {
+    loadHistory();
+    const id = setInterval(loadHistory, 15000);
+    const onFocus = () => loadHistory();
+    window.addEventListener("focus", onFocus);
+    return () => { clearInterval(id); window.removeEventListener("focus", onFocus); };
+  }, [loadHistory]);
 
   const adjust = (id: string, d: number) =>
     setQty((prev) => ({ ...prev, [id]: Math.max(0, (prev[id] ?? 0) + d) }));

@@ -81,7 +81,14 @@ export default function AdminRoyaltiesPage() {
     setLoading(false);
   }, [supabase, toast, period]);
 
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  useEffect(() => {
+    load();
+    const id = setInterval(load, 15000);
+    const onFocus = () => load();
+    window.addEventListener("focus", onFocus);
+    return () => { clearInterval(id); window.removeEventListener("focus", onFocus); };
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, []);
 
   const periods = useMemo(
     () => [...new Set(rows.map((r) => r.period))].sort().reverse(),

@@ -56,6 +56,10 @@ export default function SalesPage() {
   useEffect(() => {
     setMessage(null);
     loadReports();
+    const id = setInterval(loadReports, 15000);
+    const onFocus = () => loadReports();
+    window.addEventListener("focus", onFocus);
+    return () => { clearInterval(id); window.removeEventListener("focus", onFocus); };
   }, [loadReports]);
 
   const channelTotal = dineIn + takeaway + delivery;

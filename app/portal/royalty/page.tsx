@@ -77,7 +77,15 @@ export default function RoyaltyPage() {
     setLoading(false);
   }, [supabase, outlet.id, toast]);
 
-  useEffect(() => { load(); }, [load]);
+  // Initial load + lightweight poll + refresh on tab re-focus so the franchisee
+  // sees HQ verifications ("Paid") without manually hitting reload.
+  useEffect(() => {
+    load();
+    const id = setInterval(load, 15000);
+    const onFocus = () => load();
+    window.addEventListener("focus", onFocus);
+    return () => { clearInterval(id); window.removeEventListener("focus", onFocus); };
+  }, [load]);
 
   const effectiveStatus = (r: Royalty): Status => {
     const p = proofs[r.id];

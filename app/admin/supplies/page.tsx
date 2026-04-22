@@ -34,7 +34,7 @@ export default function AdminSuppliesPage() {
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
-    (async () => {
+    const load = async () => {
       const [{ data: orderRows, error }, { data: outletData }, { data: franchiseeData }] = await Promise.all([
         supabase
           .from("supply_orders")
@@ -57,7 +57,12 @@ export default function AdminSuppliesPage() {
         (byOrder[it.order_id] ??= []).push({ sku: it.sku, name: it.name, unit: it.unit, qty: it.qty, unit_price: it.unit_price });
       }
       setOrders(ords.map((o) => ({ ...o, items: byOrder[o.id] ?? [] })));
-    })();
+    };
+    load();
+    const id = setInterval(load, 15000);
+    const onFocus = () => load();
+    window.addEventListener("focus", onFocus);
+    return () => { clearInterval(id); window.removeEventListener("focus", onFocus); };
   }, [toast]);
 
   const rows = useMemo(() => {
