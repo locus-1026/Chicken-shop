@@ -132,23 +132,12 @@ function AdminShell({ children }: { children: React.ReactNode }) {
       // `unpaidRoyalties` already includes rows with pending proofs, so use
       // max() to avoid double-counting the same statement.
       setPendingRoyalties(Math.max(unpaidRoyalties ?? 0, awaitingVerification));
-      // Help badge: open/in_progress tickets with activity after admin last visit.
+      // Help badge: every ticket not yet resolved (open + in_progress).
+      // Stays visible until HQ marks the ticket resolved — mirrors the
+      // "Open" and "In progress" KPIs on /admin/support.
       const openIds = ((ticketRows ?? []) as { id: string; created_at: string }[]);
-      let helpCount = 0;
-      if (openIds.length > 0) {
-        const { data: fMsgs } = await supabase
-          .from("ticket_messages")
-          .select("ticket_id, created_at")
-          .in("ticket_id", openIds.map((t) => t.id))
-          .eq("author", "franchisee")
-          .order("created_at", { ascending: false });
-        const latestByTicket: Record<string, string> = {};
-        for (const m of (fMsgs ?? []) as { ticket_id: string; created_at: string }[]) {
-          if (!latestByTicket[m.ticket_id]) latestByTicket[m.ticket_id] = m.created_at;
-        }
-        helpCount = openIds.filter((t) => (latestByTicket[t.id] ?? t.created_at) > supportSeen).length;
-      }
-      setOpenTickets(helpCount);
+      setOpenTickets(openIds.length);
+      void supportSeen; // watermark no longer used for this badge
       setAtRiskAudits(((auditRows ?? []) as { risk_flag: boolean }[]).filter((a) => a.risk_flag).length);
 
       // Calendar alert: HQ-wide coaching calls still to happen today (from
