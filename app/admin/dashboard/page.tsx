@@ -202,12 +202,12 @@ export default function AdminDashboard() {
       <div className="grid gap-5 lg:grid-cols-2">
         <Card>
           <CardTitle>
-            <span className="inline-flex items-center gap-2"><Trophy size={16} className="text-[color:var(--color-brand)]"/> Top 3 performers</span>
+            <span className="inline-flex items-center gap-2"><Trophy size={16} className="text-[color:var(--color-brand)]"/> Top 3 sales performers</span>
           </CardTitle>
-          <CardSubtitle>By % of monthly target</CardSubtitle>
+          <CardSubtitle>Ranked by % of this month&apos;s sales target achieved (actual ÷ target).</CardSubtitle>
           <div className="mt-6 flex items-end justify-center gap-4">
             {[top[1], top[0], top[2]].map((p, i) => (
-              <div key={p.outlet.id} className="flex w-24 flex-col items-center">
+              <div key={p.outlet.id} className="flex w-28 flex-col items-center">
                 <div
                   className="flex w-full items-end justify-center rounded-t-xl bg-[color:var(--color-brand-100)] text-[color:var(--color-brand-700)] font-bold"
                   style={{ height: [90, 130, 70][i] }}
@@ -215,7 +215,11 @@ export default function AdminDashboard() {
                   <span className="pb-2 text-lg">{i === 1 ? "🥇" : i === 0 ? "🥈" : "🥉"}</span>
                 </div>
                 <div className="mt-2 text-center text-[12px] font-semibold">{p.outlet.outlet_code}</div>
-                <div className="text-[11px] text-[color:var(--color-ink-soft)]">{Math.round(p.pct)}%</div>
+                <div className="text-[14px] font-bold text-[color:var(--color-brand-700)]">{Math.round(p.pct)}%</div>
+                <div className="text-[10px] text-[color:var(--color-ink-soft)]">of sales target</div>
+                <div className="mt-1 text-[10px] text-[color:var(--color-ink-soft)]">
+                  RM {p.outlet.monthly_actual.toLocaleString()} / RM {p.outlet.monthly_target.toLocaleString()}
+                </div>
               </div>
             ))}
           </div>
