@@ -32,8 +32,10 @@ export function Shell({
 
   return (
     <div className="flex min-h-screen bg-[color:var(--color-background)]">
-      {/* Sidebar (desktop) */}
-      <aside className="hidden lg:flex w-64 shrink-0 flex-col border-r border-[color:var(--color-border)] bg-white px-5 py-6">
+      {/* Sidebar (desktop) — sticky to top so it stays visible while the main
+          column scrolls. `h-screen` + overflow-y-auto so long nav still scrolls
+          internally on short viewports. */}
+      <aside className="hidden lg:flex sticky top-0 h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-[color:var(--color-border)] bg-white px-5 py-6">
         <Link href="/" className="mb-8 flex items-center gap-2">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[color:var(--color-brand)] text-white font-bold">C</div>
           <div className="leading-tight">
