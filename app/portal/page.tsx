@@ -158,11 +158,26 @@ export default function PortalHome() {
 
       <Stagger className="grid gap-5 lg:grid-cols-3">
         <StaggerItem className="lg:col-span-2">
-          <Card>
+          {(() => {
+            const doneCount = todos.filter((t) => t.done).length;
+            const allDone = doneCount === todos.length;
+            return (
+          <Card className={allDone
+            ? ""
+            : "!border-[color:var(--color-danger)] !border-2 ring-4 ring-[color:var(--color-danger)]/10"}>
             <div className="flex items-center justify-between">
-              <CardTitle>Today's checklist</CardTitle>
-              <span className="text-[12px] text-[color:var(--color-ink-soft)]">
-                {todos.filter((t) => t.done).length}/{todos.length} done
+              <CardTitle>
+                <span className="inline-flex items-center gap-2">
+                  Today&apos;s checklist
+                  {!allDone && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[color:var(--color-danger)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                      <AlertTriangle size={10} /> Action needed
+                    </span>
+                  )}
+                </span>
+              </CardTitle>
+              <span className={"text-[12px] " + (allDone ? "text-[color:var(--color-success)] font-semibold" : "text-[color:var(--color-ink-soft)]")}>
+                {doneCount}/{todos.length} done
               </span>
             </div>
             <ul className="mt-3 space-y-2">
@@ -212,6 +227,8 @@ export default function PortalHome() {
               ))}
             </ul>
           </Card>
+            );
+          })()}
         </StaggerItem>
 
         <StaggerItem>
