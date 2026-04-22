@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { Stagger, StaggerItem } from "@/components/ui/Stagger";
 import { mockAudits, mockFranchisees, mockOutlets } from "@/lib/mock-data";
-import type { Royalty } from "@/lib/types";
+import type { Royalty, Outlet } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { RM, monthLabel, daysUntil } from "@/lib/utils";
 import { Trophy, AlertTriangle, PhoneCall, FileWarning, Check } from "lucide-react";
@@ -23,6 +23,10 @@ export default function AdminDashboard() {
   // /admin/royalties and the franchisee portal.
   const [royalties, setRoyalties] = useState<Royalty[]>([]);
   const [verifiedByRoyalty, setVerifiedByRoyalty] = useState<Record<string, boolean>>({});
+  // Real outlets from Supabase — the royalties table stores real UUIDs, so
+  // the per-outlet collection grid has to iterate real outlets (mockOutlets
+  // use "o-1" style ids which never match the real outlet_id column).
+  const [realOutlets, setRealOutlets] = useState<Outlet[]>([]);
   // Real franchisees from Supabase — we need the uuid to actually send a
   // notification (mockFranchisees ids like "f-1" don't link to anything).
   const [realFranchisees, setRealFranchisees] = useState<Franchisee[]>([]);
@@ -42,7 +46,7 @@ export default function AdminDashboard() {
     }
     const supabase = createSupabaseBrowserClient();
     const loadAll = async () => {
-      const [{ data: roys }, { data: fs }, { data: profs }, { data: notifs }] = await Promise.all([
+      const [{ data: roys }, { data: fs }, { data: profs }, { data: notifs }, { data: outs }] = await Promise.all([
         supabase
           .from("royalties")
           .select("id, outlet_id, gross_sales, royalty_amount, marketing_fee, due_date, paid_at, status, period:billing_period")
@@ -54,8 +58,10 @@ export default function AdminDashboard() {
           .select("recipient_id, kind, status, response_note, responded_at")
           .not("responded_at", "is", null)
           .order("responded_at", { ascending: false }),
+        supabase.from("outlets").select("*").order("outlet_code"),
       ]);
       setRealFranchisees((fs ?? []) as Franchisee[]);
+      setRealOutlets((outs ?? []) as Outlet[]);
       // Resolve each response back to its franchisee via profiles.
       const profByUser: Record<string, string | null> = {};
       for (const p of ((profs ?? []) as { id: string; franchisee_id: string | null }[])) profByUser[p.id] = p.franchisee_id;
@@ -149,8 +155,11 @@ export default function AdminDashboard() {
   });
 
   // Per-outlet × per-month grid so HQ can see exactly which outlet
-  // paid and which didn't for each of the last 3 months.
-  const collectionGrid = mockOutlets.map((o) => {
+  // paid and which didn't for each of the last 3 months. Iterates
+  // REAL outlets (royalties.outlet_id uses real UUIDs); falls back
+  // to mockOutlets only while the real list is still loading.
+  const gridOutlets = realOutlets.length > 0 ? realOutlets : mockOutlets;
+  const collectionGrid = gridOutlets.map((o) => {
     const row: {
       outlet: typeof o;
       cells: { period: string; status: "paid" | "unpaid" | "none"; amount: number }[];
