@@ -89,8 +89,15 @@ export default function AdminRoyaltiesPage() {
   );
 
   const filtered = useMemo(
-    () => rows.filter((r) => r.period === period),
-    [rows, period]
+    () => {
+      // Sort by outlet_code (CC-001, CC-002, ...) so the table reads naturally.
+      const codeById: Record<string, string> = {};
+      for (const o of outlets) codeById[o.id] = o.outlet_code;
+      return rows
+        .filter((r) => r.period === period)
+        .sort((a, b) => (codeById[a.outlet_id] ?? "").localeCompare(codeById[b.outlet_id] ?? ""));
+    },
+    [rows, period, outlets]
   );
 
   const editGross = async (id: string, g: number) => {
