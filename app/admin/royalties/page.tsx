@@ -1,126 +1,169 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
-import { mockOutlets, mockRoyalties, mockFranchisees } from "@/lib/mock-data";
 import { RM, RM2, formatDate, monthLabel } from "@/lib/utils";
 import { calcRoyalty } from "@/lib/utils";
 import { notifyRoyaltyDue } from "@/lib/mocks/notifications";
 import { useToast } from "@/components/ui/Toast";
-import type { Royalty } from "@/lib/types";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import type { Royalty, Outlet, Franchisee } from "@/lib/types";
 import { FileText, Check, AlertTriangle, X, Clock, Shield } from "lucide-react";
 
-// Shape the franchisee-side uploads. Same key used on the portal royalty page.
-type Proof = { fileName: string; reference: string; submittedAt: string };
-type ProofsByRowId = Record<string, Proof>;
-type PaidMap = Record<string, { paid_at: string }>; // rowId → payment timestamp
-
-const PROOF_KEY = (outletId: string) => `cc.royalty-proofs.${outletId}`;
-const PAID_KEY  = (outletId: string) => `cc.royalty-paid.${outletId}`;
+type Proof = {
+  id: string;
+  royalty_id: string;
+  file_name: string;
+  file_url: string | null;
+  bank_reference: string;
+  submitted_at: string;
+  verified_at: string | null;
+  rejected_at: string | null;
+  rejected_reason: string | null;
+};
 
 export default function AdminRoyaltiesPage() {
   const toast = useToast();
-  const periods = [...new Set(mockRoyalties.map((r) => r.period))].sort().reverse();
-  const [period, setPeriod] = useState(periods[0]);
-  const [rows, setRows] = useState<Royalty[]>(mockRoyalties);
-  // Proofs uploaded by franchisees, keyed by royalty row id, across every outlet.
-  const [proofs, setProofs] = useState<ProofsByRowId>({});
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+
+  const [rows, setRows] = useState<Royalty[]>([]);
+  const [outlets, setOutlets] = useState<Outlet[]>([]);
+  const [franchisees, setFranchisees] = useState<Franchisee[]>([]);
+  const [proofs, setProofs] = useState<Record<string, Proof>>({});
+  const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState<string>("");
   const [verifying, setVerifying] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState<string | null>(null); // no-proof confirmation
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [slipUrl, setSlipUrl] = useState<string | null>(null);
 
-  // Scan every localStorage key under our prefixes — not just mock outlet ids —
-  // so proofs/payments stored under Supabase UUIDs from older sessions still
-  // appear to HQ. Belt-and-braces in case a franchisee hasn't triggered the
-  // client-side migration yet.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const mergedProofs: ProofsByRowId = {};
-    const paidRows: PaidMap = {};
-    for (let i = 0; i < window.localStorage.length; i++) {
-      const k = window.localStorage.key(i);
-      if (!k) continue;
-      const raw = window.localStorage.getItem(k);
-      if (!raw) continue;
-      try {
-        if (k.startsWith("cc.royalty-proofs.")) {
-          Object.assign(mergedProofs, JSON.parse(raw) as ProofsByRowId);
-        } else if (k.startsWith("cc.royalty-paid.")) {
-          Object.assign(paidRows, JSON.parse(raw) as PaidMap);
-        }
-      } catch {
-        /* ignore malformed entries */
-      }
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [
+      { data: royData, error: royErr },
+      { data: outletData },
+      { data: franchiseeData },
+    ] = await Promise.all([
+      // DB column is billing_period — alias so the Royalty type's `period` lines up.
+      supabase
+        .from("royalties")
+        .select("id, outlet_id, gross_sales, royalty_amount, marketing_fee, due_date, paid_at, status, period:billing_period")
+        .order("billing_period", { ascending: false }),
+      supabase.from("outlets").select("*").order("outlet_code"),
+      supabase.from("franchisees").select("*"),
+    ]);
+
+    if (royErr) {
+      toast("error", `Couldn't load royalties: ${royErr.message}`);
+      setLoading(false);
+      return;
     }
-    setProofs(mergedProofs);
-    if (Object.keys(paidRows).length > 0) {
-      setRows((prev) =>
-        prev.map((r) =>
-          paidRows[r.id] ? { ...r, status: "paid", paid_at: paidRows[r.id].paid_at } : r
-        )
-      );
+    const royalties = (royData ?? []) as Royalty[];
+    setRows(royalties);
+    setOutlets((outletData ?? []) as Outlet[]);
+    setFranchisees((franchiseeData ?? []) as Franchisee[]);
+
+    if (royalties.length > 0) {
+      const { data: proofRows } = await supabase
+        .from("royalty_proofs")
+        .select("id, royalty_id, file_name, file_url, bank_reference, submitted_at, verified_at, rejected_at, rejected_reason")
+        .in("royalty_id", royalties.map((r) => r.id));
+      const map: Record<string, Proof> = {};
+      for (const p of (proofRows ?? []) as Proof[]) map[p.royalty_id] = p;
+      setProofs(map);
     }
-  }, []);
 
-  // Persist a paid row so franchisee sees "Paid" on their side.
-  const persistPaid = (rowId: string, outletId: string, paid_at: string) => {
-    if (typeof window === "undefined") return;
-    const key = PAID_KEY(outletId);
-    const raw = window.localStorage.getItem(key);
-    let map: PaidMap = {};
-    try { map = raw ? JSON.parse(raw) : {}; } catch { map = {}; }
-    map[rowId] = { paid_at };
-    window.localStorage.setItem(key, JSON.stringify(map));
-  };
-
-  const removeProof = (rowId: string) => {
-    const row = rows.find((r) => r.id === rowId);
-    if (!row || typeof window === "undefined") return;
-    const key = PROOF_KEY(row.outlet_id);
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return;
-    try {
-      const map = JSON.parse(raw) as ProofsByRowId;
-      delete map[rowId];
-      window.localStorage.setItem(key, JSON.stringify(map));
-    } catch {
-      // noop
+    // Default to latest period on first load.
+    if (!period && royalties.length > 0) {
+      setPeriod(royalties[0].period);
     }
-    setProofs((prev) => {
-      const next = { ...prev };
-      delete next[rowId];
-      return next;
-    });
-  };
+    setLoading(false);
+  }, [supabase, toast, period]);
 
-  const filtered = useMemo(() => rows.filter((r) => r.period === period), [rows, period]);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
-  const editGross = (id: string, g: number) => {
+  const periods = useMemo(
+    () => [...new Set(rows.map((r) => r.period))].sort().reverse(),
+    [rows]
+  );
+
+  const filtered = useMemo(
+    () => rows.filter((r) => r.period === period),
+    [rows, period]
+  );
+
+  const editGross = async (id: string, g: number) => {
     const c = calcRoyalty(g);
+    // Update locally first for responsiveness, then persist.
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, gross_sales: g, royalty_amount: c.royalty, marketing_fee: c.marketing } : r)));
+    const { error } = await supabase
+      .from("royalties")
+      .update({ gross_sales: g })
+      .eq("id", id);
+    if (error) toast("error", `Save failed: ${error.message}`);
   };
 
-  const markPaid = (id: string) => {
+  const markPaid = async (id: string) => {
     const paid_at = new Date().toISOString();
-    const row = rows.find((r) => r.id === id);
-    if (row) persistPaid(id, row.outlet_id, paid_at);
+    const { error } = await supabase
+      .from("royalties")
+      .update({ status: "paid", paid_at })
+      .eq("id", id);
+    if (error) {
+      toast("error", `Couldn't mark paid: ${error.message}`);
+      return false;
+    }
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, status: "paid", paid_at } : r)));
-    toast("success", "Marked as paid.");
+    return true;
   };
 
-  const confirmFromProof = (id: string) => {
+  const confirmFromProof = async (id: string) => {
     const proof = proofs[id];
-    markPaid(id);
-    removeProof(id);
+    if (!proof) return;
+    // 1) Mark the proof verified.
+    const { error: pErr } = await supabase
+      .from("royalty_proofs")
+      .update({ verified_at: new Date().toISOString(), rejected_at: null, rejected_reason: null })
+      .eq("id", proof.id);
+    if (pErr) { toast("error", `Verify failed: ${pErr.message}`); return; }
+    // 2) Mark the royalty paid.
+    const ok = await markPaid(id);
+    if (!ok) return;
+    // 3) Refresh proofs state so UI flips.
+    setProofs((prev) => ({ ...prev, [id]: { ...proof, verified_at: new Date().toISOString(), rejected_at: null, rejected_reason: null } }));
     setVerifying(null);
-    toast("success", `Confirmed — ref ${proof?.reference ?? ""}. Franchisee notified.`);
+    toast("success", `Confirmed — ref ${proof.bank_reference}. Franchisee will see Paid on refresh.`);
   };
 
-  const forcePaidNoProof = (id: string) => {
-    markPaid(id);
-    setConfirming(null);
-    toast("info", "Marked paid without an uploaded slip — noted on record.");
+  const rejectProof = async (id: string, reason: string) => {
+    const proof = proofs[id];
+    if (!proof) return;
+    const { error } = await supabase
+      .from("royalty_proofs")
+      .update({ rejected_at: new Date().toISOString(), rejected_reason: reason, verified_at: null })
+      .eq("id", proof.id);
+    if (error) { toast("error", `Reject failed: ${error.message}`); return; }
+    setProofs((prev) => ({ ...prev, [id]: { ...proof, rejected_at: new Date().toISOString(), rejected_reason: reason, verified_at: null } }));
+    setVerifying(null);
+    toast("info", "Slip rejected. Franchisee will need to re-upload.");
+  };
+
+  const forcePaidNoProof = async (id: string) => {
+    const ok = await markPaid(id);
+    if (ok) {
+      setConfirming(null);
+      toast("info", "Marked paid without an uploaded slip — noted on record.");
+    }
+  };
+
+  const viewSlip = async (filePath: string) => {
+    const { data, error } = await supabase.storage
+      .from("royalty-proofs")
+      .createSignedUrl(filePath, 60 * 10); // 10 min
+    if (error || !data) { toast("error", `Couldn't open slip: ${error?.message ?? "unknown"}`); return; }
+    setSlipUrl(data.signedUrl);
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
   };
 
   const sendReminders = async () => {
@@ -130,32 +173,28 @@ export default function AdminRoyaltiesPage() {
       return;
     }
     for (const r of outstanding) {
-      const outlet = mockOutlets.find((o) => o.id === r.outlet_id)!;
-      const f = mockFranchisees.find((x) => x.id === outlet.franchisee_id)!;
-      await notifyRoyaltyDue(outlet.outlet_code, f.email ?? "unknown@coco.my", r.royalty_amount + r.marketing_fee);
+      const outlet = outlets.find((o) => o.id === r.outlet_id);
+      if (!outlet) continue;
+      const f = franchisees.find((x) => x.id === outlet.franchisee_id);
+      await notifyRoyaltyDue(outlet.outlet_code, f?.email ?? "unknown@coco.my", r.royalty_amount + r.marketing_fee);
     }
     toast("success", `Sent ${outstanding.length} royalty reminders.`);
   };
 
-  const markAllPaidWithToast = () => {
-    const count = filtered.filter((r) => r.status !== "paid").length;
-    if (count === 0) {
+  const markAllPaidWithToast = async () => {
+    const unpaid = filtered.filter((r) => r.status !== "paid");
+    if (unpaid.length === 0) {
       toast("info", "Every royalty for this period is already settled.");
       return;
     }
     const paid_at = new Date().toISOString();
-    // Persist each row's paid state so franchisees see the update.
-    filtered.forEach((r) => {
-      if (r.status !== "paid") persistPaid(r.id, r.outlet_id, paid_at);
-    });
-    setRows((prev) =>
-      prev.map((r) =>
-        r.period === period && r.status !== "paid"
-          ? { ...r, status: "paid", paid_at }
-          : r
-      )
-    );
-    toast("success", `Marked ${count} royalties as paid.`);
+    const { error } = await supabase
+      .from("royalties")
+      .update({ status: "paid", paid_at })
+      .in("id", unpaid.map((r) => r.id));
+    if (error) { toast("error", `Bulk update failed: ${error.message}`); return; }
+    setRows((prev) => prev.map((r) => (unpaid.find((u) => u.id === r.id) ? { ...r, status: "paid", paid_at } : r)));
+    toast("success", `Marked ${unpaid.length} royalties as paid.`);
   };
 
   const totals = filtered.reduce(
@@ -194,7 +233,7 @@ export default function AdminRoyaltiesPage() {
         <Card>
           <div className="text-[12px] text-[color:var(--color-ink-soft)]">Awaiting my verification</div>
           <div className="mt-1 text-xl font-semibold text-[color:var(--color-brand-700)]">
-            {filtered.filter((r) => r.status !== "paid" && proofs[r.id]).length}
+            {filtered.filter((r) => r.status !== "paid" && proofs[r.id] && !proofs[r.id].rejected_at).length}
           </div>
         </Card>
       </div>
@@ -214,10 +253,16 @@ export default function AdminRoyaltiesPage() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((r) => {
-              const outlet = mockOutlets.find((o) => o.id === r.outlet_id)!;
+            {loading && filtered.length === 0 ? (
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-[color:var(--color-ink-soft)]">Loading statements…</td></tr>
+            ) : filtered.length === 0 ? (
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-[color:var(--color-ink-soft)]">No statements for this period.</td></tr>
+            ) : filtered.map((r) => {
+              const outlet = outlets.find((o) => o.id === r.outlet_id);
+              if (!outlet) return null;
               const proof = proofs[r.id];
-              const awaitingHQ = r.status !== "paid" && !!proof;
+              const activeProof = proof && !proof.rejected_at ? proof : null;
+              const awaitingHQ = r.status !== "paid" && !!activeProof;
               const displayStatus: "paid" | "awaiting" | "overdue" | "pending" =
                 r.status === "paid" ? "paid"
                 : awaitingHQ ? "awaiting"
@@ -233,8 +278,11 @@ export default function AdminRoyaltiesPage() {
                   <td className="px-4 py-3">
                     <input
                       type="number"
-                      value={r.gross_sales}
-                      onChange={(e) => editGross(r.id, Number(e.target.value))}
+                      defaultValue={r.gross_sales}
+                      onBlur={(e) => {
+                        const v = Number(e.target.value);
+                        if (!Number.isNaN(v) && v !== r.gross_sales) editGross(r.id, v);
+                      }}
                       className="w-32 rounded-lg border border-[color:var(--color-border)] px-2 py-1 text-right"
                     />
                   </td>
@@ -243,15 +291,18 @@ export default function AdminRoyaltiesPage() {
                   <td className="px-4 py-3 font-semibold">{RM2(r.royalty_amount + r.marketing_fee)}</td>
                   <td className="px-4 py-3">
                     <StatusPill status={displayStatus} />
+                    {proof?.rejected_at && (
+                      <div className="mt-1 text-[11px] text-[color:var(--color-danger)]">Rejected — awaiting re-upload</div>
+                    )}
                   </td>
                   <td className="px-4 py-3">
-                    {proof ? (
+                    {activeProof ? (
                       <button
                         onClick={() => setVerifying(r.id)}
                         className="inline-flex items-center gap-1.5 rounded-lg border border-[color:var(--color-brand-200)] bg-[color:var(--color-brand-50)] px-2.5 py-1.5 text-[12px] font-medium text-[color:var(--color-brand-700)] hover:bg-[color:var(--color-brand-100)]"
                         title="View uploaded slip"
                       >
-                        <FileText size={12} /> {proof.reference || "View slip"}
+                        <FileText size={12} /> {activeProof.bank_reference || "View slip"}
                       </button>
                     ) : r.status === "paid" ? (
                       <span className="text-[11px] text-[color:var(--color-ink-soft)]">
@@ -266,7 +317,7 @@ export default function AdminRoyaltiesPage() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     {r.status !== "paid" && (
-                      proof ? (
+                      activeProof ? (
                         <Button size="sm" variant="success" onClick={() => setVerifying(r.id)}>
                           <Shield size={12} /> Verify & confirm
                         </Button>
@@ -286,7 +337,7 @@ export default function AdminRoyaltiesPage() {
 
       {verifying && (() => {
         const row = rows.find((r) => r.id === verifying);
-        const outlet = row ? mockOutlets.find((o) => o.id === row.outlet_id) : null;
+        const outlet = row ? outlets.find((o) => o.id === row.outlet_id) : null;
         const proof = proofs[verifying];
         if (!row || !outlet || !proof) return null;
         return (
@@ -297,19 +348,16 @@ export default function AdminRoyaltiesPage() {
             bankRef={`Maybank 5142 1234 5678 · ref ${outlet.outlet_code}`}
             proof={proof}
             onClose={() => setVerifying(null)}
+            onViewSlip={() => proof.file_url && viewSlip(proof.file_url)}
             onConfirm={() => confirmFromProof(row.id)}
-            onReject={() => {
-              removeProof(row.id);
-              setVerifying(null);
-              toast("info", "Slip rejected. Franchisee will need to re-upload.");
-            }}
+            onReject={() => rejectProof(row.id, "Could not reconcile against Maybank2E")}
           />
         );
       })()}
 
       {confirming && (() => {
         const row = rows.find((r) => r.id === confirming);
-        const outlet = row ? mockOutlets.find((o) => o.id === row.outlet_id) : null;
+        const outlet = row ? outlets.find((o) => o.id === row.outlet_id) : null;
         if (!row || !outlet) return null;
         return (
           <NoProofConfirmModal
@@ -321,6 +369,9 @@ export default function AdminRoyaltiesPage() {
           />
         );
       })()}
+
+      {/* slipUrl isn't rendered inline — we open in a new tab. Retained in state so future inline preview is one swap away. */}
+      {slipUrl && null}
     </div>
   );
 }
@@ -333,7 +384,7 @@ function StatusPill({ status }: { status: "paid" | "awaiting" | "overdue" | "pen
 }
 
 function VerifyProofModal({
-  outletCode, month, amount, bankRef, proof, onClose, onConfirm, onReject,
+  outletCode, month, amount, bankRef, proof, onClose, onViewSlip, onConfirm, onReject,
 }: {
   outletCode: string;
   month: string;
@@ -341,6 +392,7 @@ function VerifyProofModal({
   bankRef: string;
   proof: Proof;
   onClose: () => void;
+  onViewSlip: () => void;
   onConfirm: () => void;
   onReject: () => void;
 }) {
@@ -364,13 +416,16 @@ function VerifyProofModal({
         </div>
 
         <div className="space-y-3 p-5">
-          <div className="rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-background)] p-4 text-center">
+          <button
+            onClick={onViewSlip}
+            className="w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-background)] p-4 text-center hover:border-[color:var(--color-brand-300)]"
+          >
             <FileText size={28} className="mx-auto mb-2 text-[color:var(--color-brand)]" />
-            <div className="text-sm font-semibold">{proof.fileName}</div>
-            <div className="mt-1 text-[11px] text-[color:var(--color-ink-soft)]">Uploaded {formatDate(proof.submittedAt)}</div>
-          </div>
+            <div className="text-sm font-semibold">{proof.file_name}</div>
+            <div className="mt-1 text-[11px] text-[color:var(--color-ink-soft)]">Uploaded {formatDate(proof.submitted_at)} · click to open</div>
+          </button>
 
-          <DetailRow label="Bank reference" value={<span className="font-mono">{proof.reference}</span>} />
+          <DetailRow label="Bank reference" value={<span className="font-mono">{proof.bank_reference}</span>} />
           <DetailRow label="Expected credit into" value={bankRef} />
 
           <div className="rounded-xl bg-[color:var(--color-brand-50)] px-3 py-2.5 text-[12px] text-[color:var(--color-brand-700)]">

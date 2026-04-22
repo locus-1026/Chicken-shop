@@ -1,75 +1,88 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
 import { useCurrentOutlet } from "@/lib/current-outlet";
-import { mockRoyalties, resolveMockOutletId } from "@/lib/mock-data";
 import { useToast } from "@/components/ui/Toast";
 import { RM2, formatDate, monthLabel, daysUntil } from "@/lib/utils";
 import type { Royalty } from "@/lib/types";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Check, Clock, AlertCircle, Upload, FileText, X, Copy } from "lucide-react";
 
 type Status = Royalty["status"];
-const PROOF_KEY = (outletId: string) => `cc.royalty-proofs.${outletId}`;
-const PAID_KEY  = (outletId: string) => `cc.royalty-paid.${outletId}`;
 
-type ProofMap = Record<string, { fileName: string; reference: string; submittedAt: string }>;
-type PaidMap  = Record<string, { paid_at: string }>;
+// One row from public.royalty_proofs (joined into each statement row).
+type Proof = {
+  id: string;
+  royalty_id: string;
+  file_name: string;
+  file_url: string | null;
+  bank_reference: string;
+  submitted_at: string;
+  verified_at: string | null;
+  rejected_at: string | null;
+  rejected_reason: string | null;
+};
 
 export default function RoyaltyPage() {
-  const { outlet } = useCurrentOutlet();
+  const { outlet, franchisee } = useCurrentOutlet();
   const toast = useToast();
-  const [proofs, setProofs] = useState<ProofMap>({});
-  const [paidMap, setPaidMap] = useState<PaidMap>({});
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+
+  const [rows, setRows] = useState<Royalty[]>([]);
+  const [proofs, setProofs] = useState<Record<string, Proof>>({});
+  const [loading, setLoading] = useState(true);
   const [activeRowId, setActiveRowId] = useState<string | null>(null);
+  const [busyRowId, setBusyRowId] = useState<string | null>(null);
 
-  // Use the mock outlet id as the localStorage key so admin + portal agree.
-  const mockOutletId = resolveMockOutletId(outlet);
+  const load = useCallback(async () => {
+    setLoading(true);
+    // RLS already filters royalties to this franchisee's outlets, but we narrow
+    // by outlet_id so the user sees only the outlet they've picked in the switcher.
+    // DB column is billing_period (date); we alias to `period` so the rest of
+    // the UI (and the Royalty type) can use `period` untouched.
+    const { data: royData, error: royErr } = await supabase
+      .from("royalties")
+      .select("id, outlet_id, gross_sales, royalty_amount, marketing_fee, due_date, paid_at, status, period:billing_period")
+      .eq("outlet_id", outlet.id)
+      .order("billing_period", { ascending: false });
 
-  // Load persisted proofs for this outlet so refreshes keep the paper trail.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    // One-time migration: if proofs were saved under the real UUID, copy them
-    // over to the mock-id key so the admin can see them.
-    const legacy = window.localStorage.getItem(PROOF_KEY(outlet.id));
-    const current = window.localStorage.getItem(PROOF_KEY(mockOutletId));
-    if (legacy && outlet.id !== mockOutletId) {
-      try {
-        const merged = { ...(current ? JSON.parse(current) : {}), ...JSON.parse(legacy) };
-        window.localStorage.setItem(PROOF_KEY(mockOutletId), JSON.stringify(merged));
-        window.localStorage.removeItem(PROOF_KEY(outlet.id));
-        setProofs(merged);
-        return;
-      } catch {
-        // fall through to normal load
+    if (royErr) {
+      toast("error", `Couldn't load royalties: ${royErr.message}`);
+      setLoading(false);
+      return;
+    }
+    const royalties = (royData ?? []) as Royalty[];
+    setRows(royalties);
+
+    if (royalties.length > 0) {
+      const { data: proofRows, error: proofErr } = await supabase
+        .from("royalty_proofs")
+        .select("id, royalty_id, file_name, file_url, bank_reference, submitted_at, verified_at, rejected_at, rejected_reason")
+        .in("royalty_id", royalties.map((r) => r.id));
+
+      if (proofErr) {
+        toast("error", `Couldn't load proofs: ${proofErr.message}`);
+      } else {
+        const map: Record<string, Proof> = {};
+        for (const p of (proofRows ?? []) as Proof[]) map[p.royalty_id] = p;
+        setProofs(map);
       }
+    } else {
+      setProofs({});
     }
-    setProofs(current ? JSON.parse(current) : {});
 
-    // Also load any HQ-confirmed payments so the statement flips to Paid here.
-    const rawPaid = window.localStorage.getItem(PAID_KEY(mockOutletId));
-    setPaidMap(rawPaid ? JSON.parse(rawPaid) : {});
-  }, [outlet.id, mockOutletId]);
+    setLoading(false);
+  }, [supabase, outlet.id, toast]);
 
-  const persist = (next: ProofMap) => {
-    setProofs(next);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(PROOF_KEY(mockOutletId), JSON.stringify(next));
-    }
-  };
-
-  const rows = useMemo(
-    () => mockRoyalties
-      .filter((r) => r.outlet_id === mockOutletId)
-      .sort((a, b) => (a.period < b.period ? 1 : -1)),
-    [mockOutletId]
-  );
+  useEffect(() => { load(); }, [load]);
 
   const effectiveStatus = (r: Royalty): Status => {
-    if (r.status === "paid" || paidMap[r.id]) return "paid";
-    if (proofs[r.id]) return "submitted";
+    const p = proofs[r.id];
+    if (r.status === "paid" || r.paid_at || (p && p.verified_at)) return "paid";
+    if (p && !p.rejected_at) return "submitted";
     if (daysUntil(r.due_date) < 0) return "overdue";
     return r.status;
   };
@@ -78,25 +91,68 @@ export default function RoyaltyPage() {
     .filter((r) => effectiveStatus(r) !== "paid")
     .reduce((s, r) => s + r.royalty_amount + r.marketing_fee, 0);
 
-  const submitted = rows.filter((r) => effectiveStatus(r) === "submitted").length;
-  const overdue   = rows.filter((r) => effectiveStatus(r) === "overdue").length;
+  const submittedCount = rows.filter((r) => effectiveStatus(r) === "submitted").length;
+  const overdueCount   = rows.filter((r) => effectiveStatus(r) === "overdue").length;
 
   const active = rows.find((r) => r.id === activeRowId) ?? null;
 
-  const handleUpload = (rowId: string, fileName: string, reference: string) => {
-    persist({
-      ...proofs,
-      [rowId]: { fileName, reference, submittedAt: new Date().toISOString() },
-    });
-    setActiveRowId(null);
-    toast("success", "Payment proof uploaded. HQ will confirm within one business day.");
+  const handleUpload = async (rowId: string, file: File, reference: string) => {
+    setBusyRowId(rowId);
+    try {
+      // Path convention: <franchisee_id>/<royalty_id>/<timestamp>-<filename>
+      // Storage RLS uses the first path segment for ownership.
+      const safeName = file.name.replace(/[^\w.\-]+/g, "_");
+      const path = `${franchisee.id}/${rowId}/${Date.now()}-${safeName}`;
+
+      const { error: upErr } = await supabase.storage
+        .from("royalty-proofs")
+        .upload(path, file, { upsert: false, contentType: file.type || undefined });
+      if (upErr) throw new Error(upErr.message);
+
+      // Insert (or replace — `unique(royalty_id)` enforces one active proof at a time).
+      // If a prior rejected proof exists, delete it first.
+      const existing = proofs[rowId];
+      if (existing) {
+        await supabase.from("royalty_proofs").delete().eq("id", existing.id);
+      }
+
+      const { error: insErr } = await supabase.from("royalty_proofs").insert({
+        royalty_id: rowId,
+        file_name: file.name,
+        file_url: path,
+        bank_reference: reference,
+      });
+      if (insErr) throw new Error(insErr.message);
+
+      await load();
+      setActiveRowId(null);
+      toast("success", "Payment proof uploaded. HQ will confirm within one business day.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Upload failed.";
+      toast("error", msg);
+    } finally {
+      setBusyRowId(null);
+    }
   };
 
-  const removeProof = (rowId: string) => {
-    const next = { ...proofs };
-    delete next[rowId];
-    persist(next);
-    toast("info", "Proof removed.");
+  const removeProof = async (rowId: string) => {
+    const p = proofs[rowId];
+    if (!p) return;
+    setBusyRowId(rowId);
+    try {
+      if (p.file_url) {
+        await supabase.storage.from("royalty-proofs").remove([p.file_url]);
+      }
+      const { error } = await supabase.from("royalty_proofs").delete().eq("id", p.id);
+      if (error) throw new Error(error.message);
+      await load();
+      toast("info", "Proof removed.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Couldn't remove proof.";
+      toast("error", msg);
+    } finally {
+      setBusyRowId(null);
+    }
   };
 
   const copyRef = () => {
@@ -113,8 +169,8 @@ export default function RoyaltyPage() {
         <CardSubtitle>Royalty 5% of gross sales · Marketing levy 2% · Due 14th of the following month.</CardSubtitle>
         <div className="mt-4 grid gap-3 sm:grid-cols-4">
           <SummaryBox label="Total outstanding" value={RM2(outstanding)} tone={outstanding > 0 ? "danger" : "success"} />
-          <SummaryBox label="Awaiting HQ confirmation" value={`${submitted}`} tone={submitted > 0 ? "brand" : "neutral"} />
-          <SummaryBox label="Overdue statements" value={`${overdue}`} tone={overdue > 0 ? "danger" : "success"} />
+          <SummaryBox label="Awaiting HQ confirmation" value={`${submittedCount}`} tone={submittedCount > 0 ? "brand" : "neutral"} />
+          <SummaryBox label="Overdue statements" value={`${overdueCount}`} tone={overdueCount > 0 ? "danger" : "success"} />
           <div className="rounded-xl border border-[color:var(--color-border)] bg-white px-4 py-3">
             <div className="text-[12px] text-[color:var(--color-ink-soft)]">Payment reference</div>
             <button
@@ -144,7 +200,11 @@ export default function RoyaltyPage() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => {
+            {loading && rows.length === 0 ? (
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-[color:var(--color-ink-soft)]">Loading statements…</td></tr>
+            ) : rows.length === 0 ? (
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-[color:var(--color-ink-soft)]">No royalty statements yet.</td></tr>
+            ) : rows.map((r) => {
               const st = effectiveStatus(r);
               const proof = proofs[r.id];
               return (
@@ -159,7 +219,12 @@ export default function RoyaltyPage() {
                     <StatusPill status={st} />
                     {proof && (
                       <div className="mt-1 text-[11px] text-[color:var(--color-ink-soft)]">
-                        <FileText size={10} className="inline -mt-0.5" /> {proof.fileName}
+                        <FileText size={10} className="inline -mt-0.5" /> {proof.file_name}
+                      </div>
+                    )}
+                    {proof?.rejected_at && (
+                      <div className="mt-1 text-[11px] text-[color:var(--color-danger)]">
+                        Rejected: {proof.rejected_reason ?? "please re-upload"}
                       </div>
                     )}
                   </td>
@@ -168,16 +233,17 @@ export default function RoyaltyPage() {
                       <span className="text-[12px] text-[color:var(--color-success)]">
                         <Check size={12} className="inline -mt-0.5" /> Confirmed by HQ
                       </span>
-                    ) : proof ? (
+                    ) : proof && !proof.rejected_at ? (
                       <button
+                        disabled={busyRowId === r.id}
                         onClick={() => removeProof(r.id)}
-                        className="text-[12px] text-[color:var(--color-ink-soft)] hover:text-[color:var(--color-danger)]"
+                        className="text-[12px] text-[color:var(--color-ink-soft)] hover:text-[color:var(--color-danger)] disabled:opacity-50"
                       >
-                        Remove & re-upload
+                        {busyRowId === r.id ? "Removing…" : "Remove & re-upload"}
                       </button>
                     ) : (
                       <Button size="sm" variant="outline" onClick={() => setActiveRowId(r.id)}>
-                        <Upload size={12} /> Upload proof
+                        <Upload size={12} /> {proof?.rejected_at ? "Re-upload" : "Upload proof"}
                       </Button>
                     )}
                   </td>
@@ -192,7 +258,8 @@ export default function RoyaltyPage() {
         <UploadProofModal
           statement={active}
           suggestedRef={outlet.outlet_code}
-          onClose={() => setActiveRowId(null)}
+          busy={busyRowId === active.id}
+          onClose={() => (busyRowId ? null : setActiveRowId(null))}
           onSubmit={handleUpload}
         />
       )}
@@ -222,14 +289,15 @@ function SummaryBox({ label, value, tone }: { label: string; value: string; tone
 }
 
 function UploadProofModal({
-  statement, suggestedRef, onClose, onSubmit,
+  statement, suggestedRef, busy, onClose, onSubmit,
 }: {
   statement: Royalty;
   suggestedRef: string;
+  busy: boolean;
   onClose: () => void;
-  onSubmit: (rowId: string, fileName: string, reference: string) => void;
+  onSubmit: (rowId: string, file: File, reference: string) => void;
 }) {
-  const [fileName, setFileName] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [reference, setReference] = useState(suggestedRef);
 
   return (
@@ -255,16 +323,16 @@ function UploadProofModal({
           <label className="flex cursor-pointer flex-col items-center gap-2 rounded-xl border border-dashed border-[color:var(--color-border)] bg-[color:var(--color-background)] px-4 py-6 text-center text-sm">
             <Upload size={24} className="text-[color:var(--color-brand)]" />
             <span className="font-medium">
-              {fileName ?? "Tap to attach your bank slip (JPG/PNG/PDF)"}
+              {file?.name ?? "Tap to attach your bank slip (JPG/PNG/PDF)"}
             </span>
-            {fileName && <span className="text-[11px] text-[color:var(--color-ink-soft)]">Tap again to change.</span>}
+            {file && <span className="text-[11px] text-[color:var(--color-ink-soft)]">Tap again to change.</span>}
             <input
               type="file"
               className="hidden"
               accept="image/*,.pdf"
               onChange={(e) => {
-                const name = e.target.files?.[0]?.name;
-                if (name) setFileName(name);
+                const f = e.target.files?.[0];
+                if (f) setFile(f);
               }}
             />
           </label>
@@ -285,12 +353,12 @@ function UploadProofModal({
         </div>
 
         <div className="flex justify-end gap-2 border-t border-[color:var(--color-border)] bg-[color:var(--color-background)] p-4">
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
           <Button
-            onClick={() => fileName && reference.trim() && onSubmit(statement.id, fileName, reference.trim())}
-            disabled={!fileName || !reference.trim()}
+            onClick={() => file && reference.trim() && onSubmit(statement.id, file, reference.trim())}
+            disabled={!file || !reference.trim() || busy}
           >
-            <Upload size={14} /> Submit proof
+            <Upload size={14} /> {busy ? "Uploading…" : "Submit proof"}
           </Button>
         </div>
       </div>
