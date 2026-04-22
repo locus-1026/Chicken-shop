@@ -252,7 +252,7 @@ function ReadReceiptsModal({
       >
         <div className="flex items-start justify-between gap-4 border-b border-[color:var(--color-border)] p-5">
           <div className="min-w-0">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-[color:var(--color-brand-700)]">Read receipts</div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-[color:var(--color-brand-700)]">Announcement</div>
             <h3 className="mt-0.5 truncate text-lg font-semibold">{announcement.title}</h3>
             <div className="mt-0.5 text-[12px] text-[color:var(--color-ink-soft)]">
               Sent {formatDate(announcement.publish_at)} · Target: {announcement.target_role ?? "all"}
@@ -265,6 +265,15 @@ function ReadReceiptsModal({
           >
             <X size={18} />
           </button>
+        </div>
+
+        {/* Full body so HQ can review what went out without leaving this modal */}
+        <div className="max-h-[35vh] overflow-y-auto border-b border-[color:var(--color-border)] bg-[color:var(--color-surface-soft)]/40 p-5">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[color:var(--color-ink-soft)]">Body</div>
+          <div
+            className="prose prose-sm max-w-none text-[14px] leading-relaxed text-[color:var(--color-ink)]"
+            dangerouslySetInnerHTML={{ __html: announcement.body ?? "" }}
+          />
         </div>
 
         <div className="grid grid-cols-2 gap-0 border-b border-[color:var(--color-border)]">

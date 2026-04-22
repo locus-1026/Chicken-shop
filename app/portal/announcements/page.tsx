@@ -8,7 +8,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useCurrentOutlet } from "@/lib/current-outlet";
 import { useAuth } from "@/lib/auth";
 import { formatDate, RM2, daysUntil } from "@/lib/utils";
-import { Pin, Calendar, Megaphone, Bell, PhoneCall, FileWarning, Receipt, TrendingUp, GraduationCap } from "lucide-react";
+import { Pin, Calendar, Megaphone, Bell, PhoneCall, FileWarning, Receipt, TrendingUp, GraduationCap, X as XIcon } from "lucide-react";
 import Link from "next/link";
 
 type Notification = {
@@ -31,6 +31,7 @@ export default function AnnouncementsPage() {
   const [reads, setReads] = useState<Set<string>>(new Set());
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [opened, setOpened] = useState<Announcement | null>(null);
 
   // Load + live-subscribe to direct HQ notifications for this user.
   useEffect(() => {
@@ -66,6 +67,9 @@ export default function AnnouncementsPage() {
   }, [supabase, profile?.id]);
 
   // Fetch announcements + read receipts + outstanding royalty for pinned card.
+  // Also auto-marks every unread announcement as read the moment the
+  // franchisee opens this page — matches "I already looked at it" expectation
+  // and keeps HQ's read-receipt view accurate.
   useEffect(() => {
     (async () => {
       const [{ data: ann }, { data: rds }] = await Promise.all([
@@ -74,8 +78,22 @@ export default function AnnouncementsPage() {
           ? supabase.from("announcement_reads").select("announcement_id").eq("user_id", profile.id)
           : Promise.resolve({ data: [] as { announcement_id: string }[] }),
       ]);
-      setAnnouncements((ann ?? []) as Announcement[]);
-      setReads(new Set((rds ?? []).map((r: { announcement_id: string }) => r.announcement_id)));
+      const annList = (ann ?? []) as Announcement[];
+      const readSet = new Set((rds ?? []).map((r: { announcement_id: string }) => r.announcement_id));
+      setAnnouncements(annList);
+      setReads(readSet);
+      if (profile?.id) {
+        const unreadIds = annList.filter((a) => !readSet.has(a.id)).map((a) => a.id);
+        if (unreadIds.length > 0) {
+          await supabase
+            .from("announcement_reads")
+            .upsert(
+              unreadIds.map((id) => ({ announcement_id: id, user_id: profile.id })),
+              { onConflict: "announcement_id,user_id", ignoreDuplicates: true }
+            );
+          setReads(new Set([...readSet, ...unreadIds]));
+        }
+      }
     })();
     if (!profile?.id) return;
     const channel = supabase
@@ -138,10 +156,14 @@ export default function AnnouncementsPage() {
 
   const renderCard = (a: Announcement) => {
     const unread = !reads.has(a.id);
+    // Body may be rich HTML from the admin editor — strip tags for the
+    // preview so tables/lists don't blow up the layout. Full HTML shows
+    // in the modal.
+    const preview = (a.body ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
     return (
       <article
         key={a.id}
-        onClick={() => markRead(a.id)}
+        onClick={() => { markRead(a.id); setOpened(a); }}
         className={
           "cursor-pointer rounded-[16px] border bg-white p-5 transition-all hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-14px_rgba(45,26,14,0.25)] " +
           (unread
@@ -159,7 +181,8 @@ export default function AnnouncementsPage() {
             {unread && <Pill tone="warning">New</Pill>}
           </div>
         </div>
-        <p className="mt-3 text-[14px] leading-relaxed text-[color:var(--color-ink)]">{a.body}</p>
+        <p className="mt-3 line-clamp-2 text-[14px] leading-relaxed text-[color:var(--color-ink)]">{preview}</p>
+        <div className="mt-2 text-[11px] font-medium text-[color:var(--color-brand-700)]">Open full view →</div>
       </article>
     );
   };
@@ -199,6 +222,45 @@ export default function AnnouncementsPage() {
           <div className="space-y-4">{rest.map(renderCard)}</div>
         )}
       </section>
+
+      {opened && <AnnouncementDetail announcement={opened} onClose={() => setOpened(null)} />}
+    </div>
+  );
+}
+
+function AnnouncementDetail({ announcement, onClose }: { announcement: Announcement; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-[20px] bg-white shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-[color:var(--color-border)] p-5">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              {announcement.pinned && <Pill tone="brand"><Pin size={12} /> Pinned</Pill>}
+              <span className="text-[11px] text-[color:var(--color-ink-soft)]">
+                {formatDate(announcement.publish_at)}
+              </span>
+            </div>
+            <h2 className="mt-1 text-lg font-semibold">{announcement.title}</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-full p-1.5 text-[color:var(--color-ink-soft)] hover:bg-[color:var(--color-brand-50)] hover:text-[color:var(--color-brand-700)]"
+            aria-label="Close"
+          >
+            <XIcon size={18} />
+          </button>
+        </div>
+        <div
+          className="prose prose-sm max-w-none flex-1 overflow-y-auto p-5 text-[14px] leading-relaxed text-[color:var(--color-ink)]"
+          dangerouslySetInnerHTML={{ __html: announcement.body ?? "" }}
+        />
+      </div>
     </div>
   );
 }
