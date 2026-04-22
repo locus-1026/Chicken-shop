@@ -103,6 +103,7 @@ function PortalShell({ children }: { children: React.ReactNode }) {
   const [supportAlert, setSupportAlert] = useState(0);
   const [newsAlert, setNewsAlert] = useState(0);
   const [salesAlert, setSalesAlert] = useState(0); // 1 if today's sales not yet submitted
+  const [trainingAlert, setTrainingAlert] = useState(0); // # modules still to complete
 
   const recompute = useCallback(async () => {
     if (!outlet || !profile?.id) return;
@@ -214,6 +215,21 @@ function PortalShell({ children }: { children: React.ReactNode }) {
       .eq("outlet_id", outlet.id)
       .eq("report_date", today);
     setSalesAlert((todaySales ?? 0) === 0 ? 1 : 0);
+
+    // Training alert: modules not yet marked complete for this user.
+    // Badge drops as each module is finished on /portal/training.
+    const [{ data: mods }, { data: prog }] = await Promise.all([
+      supabase.from("training_modules").select("id"),
+      supabase.from("training_progress").select("module_id, completed_at").eq("user_id", profile.id),
+    ]);
+    const completedSet = new Set(
+      ((prog ?? []) as { module_id: string; completed_at: string | null }[])
+        .filter((p) => !!p.completed_at)
+        .map((p) => p.module_id)
+    );
+    const totalMods = ((mods ?? []) as { id: string }[]).length;
+    const completedCount = ((mods ?? []) as { id: string }[]).filter((m) => completedSet.has(m.id)).length;
+    setTrainingAlert(Math.max(0, totalMods - completedCount));
   }, [supabase, outlet, profile?.id]);
 
   useEffect(() => {
@@ -230,6 +246,8 @@ function PortalShell({ children }: { children: React.ReactNode }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "announcement_reads" }, recompute)
       .on("postgres_changes", { event: "*", schema: "public", table: "sales_reports" }, recompute)
       .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `recipient_id=eq.${profile.id}` }, recompute)
+      .on("postgres_changes", { event: "*", schema: "public", table: "training_progress", filter: `user_id=eq.${profile.id}` }, recompute)
+      .on("postgres_changes", { event: "*", schema: "public", table: "training_modules" }, recompute)
       .subscribe();
     // Also listen for "page visited" custom events so badges clear the instant
     // the franchisee opens the relevant page.
@@ -250,13 +268,13 @@ function PortalShell({ children }: { children: React.ReactNode }) {
       { href: "/portal/sales",         label: "Sales",      icon: <Receipt size={18} />, badge: salesAlert },
       { href: "/portal/royalty",       label: "Royalty",    icon: <Wallet size={18} />, badge: royaltyAlert },
       { href: "/portal/supplies",      label: "Supplies",   icon: <ShoppingBasket size={18} />, badge: supplyAlert },
-      { href: "/portal/training",      label: "Training",   icon: <GraduationCap size={18} /> },
+      { href: "/portal/training",      label: "Training",   icon: <GraduationCap size={18} />, badge: trainingAlert },
       { href: "/portal/compliance",    label: "Audits",     icon: <ShieldCheck size={18} /> },
       { href: "/portal/marketing",     label: "Marketing",  icon: <ImageIcon size={18} /> },
       { href: "/portal/support",       label: "Help",       icon: <LifeBuoy size={18} />, badge: supportAlert },
       { href: "/portal/announcements", label: "News",       icon: <Megaphone size={18} />, badge: newsAlert },
     ],
-    [royaltyAlert, supplyAlert, supportAlert, newsAlert, salesAlert]
+    [royaltyAlert, supplyAlert, supportAlert, newsAlert, salesAlert, trainingAlert]
   );
 
   if (!outlet || !franchisee) {
