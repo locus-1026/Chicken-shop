@@ -52,6 +52,10 @@ export default function FranchiseeDetailPage() {
   // /admin/royalties and the franchisee's own portal view.
   const [royalties, setRoyalties] = useState<Royalty[]>([]);
   const [verifiedByRoyalty, setVerifiedByRoyalty] = useState<Record<string, boolean>>({});
+  // Real outlet code lookup: real UUID → outlet_code, so each royalty row
+  // can render "Mar 2026 · CC-005" even though we still use mock outlets
+  // for the rest of the page.
+  const [outletCodeById, setOutletCodeById] = useState<Record<string, string>>({});
   const franchisee = mockFranchisees.find((f) => f.id === params.id);
 
   useEffect(() => {
@@ -60,19 +64,36 @@ export default function FranchiseeDetailPage() {
     setRenewal(raw ? (JSON.parse(raw) as Renewal) : null);
   }, [franchisee]);
 
-  // Fetch live royalties for this franchisee's outlets.
+  // Fetch live royalties for this franchisee's outlets. Mock IDs like "o-1"
+  // don't exist in Supabase — we need to resolve mock franchisee →
+  // real franchisee (by business_name) → real outlets → their real UUIDs.
   useEffect(() => {
     if (!franchisee) return;
     const supabase = createSupabaseBrowserClient();
-    const outletIds = mockOutlets
-      .filter((o) => o.franchisee_id === franchisee.id)
-      .map((o) => o.id);
-    if (outletIds.length === 0) return;
     (async () => {
+      const { data: realFr } = await supabase
+        .from("franchisees")
+        .select("id")
+        .eq("business_name", franchisee.business_name)
+        .limit(1);
+      const realFranchiseeId = (realFr ?? [])[0]?.id;
+      if (!realFranchiseeId) { setRoyalties([]); return; }
+
+      const { data: realOutlets } = await supabase
+        .from("outlets")
+        .select("id, outlet_code")
+        .eq("franchisee_id", realFranchiseeId);
+      const realOutletList = (realOutlets ?? []) as { id: string; outlet_code: string }[];
+      const realOutletIds = realOutletList.map((o) => o.id);
+      const codeMap: Record<string, string> = {};
+      for (const o of realOutletList) codeMap[o.id] = o.outlet_code;
+      setOutletCodeById(codeMap);
+      if (realOutletIds.length === 0) { setRoyalties([]); return; }
+
       const { data: roys } = await supabase
         .from("royalties")
         .select("id, outlet_id, gross_sales, royalty_amount, marketing_fee, due_date, paid_at, status, period:billing_period")
-        .in("outlet_id", outletIds)
+        .in("outlet_id", realOutletIds)
         .order("billing_period", { ascending: false });
       const rs = (roys ?? []) as Royalty[];
       setRoyalties(rs);
@@ -310,6 +331,11 @@ export default function FranchiseeDetailPage() {
               Full royalties list →
             </Link>
           </div>
+          {agg.royalties.length === 0 && (
+            <div className="mt-3 rounded-xl border border-dashed border-[color:var(--color-border)] bg-[color:var(--color-surface-soft)]/40 px-3 py-6 text-center text-[12px] text-[color:var(--color-ink-soft)]">
+              No royalty statements yet for this franchisee.
+            </div>
+          )}
           <ul className="mt-3 space-y-2">
             {agg.royalties
               .sort((a, b) => (a.period < b.period ? 1 : -1))
@@ -319,11 +345,13 @@ export default function FranchiseeDetailPage() {
                 // hasn't been flipped yet (race between two admin writes).
                 const effectiveStatus = r.status === "paid" || verifiedByRoyalty[r.id] ? "paid" : r.status;
                 const st = effectiveStatus === "paid" ? "paid" : daysUntil(r.due_date) < 0 ? "overdue" : effectiveStatus;
-                const outlet = outlets.find((o) => o.id === r.outlet_id);
+                const outletCode = outletCodeById[r.outlet_id]
+                  ?? outlets.find((o) => o.id === r.outlet_id)?.outlet_code
+                  ?? "";
                 return (
                   <li key={r.id} className="flex items-center justify-between rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2.5">
                     <div>
-                      <div className="text-sm font-semibold">{monthLabel(r.period)} · {outlet?.outlet_code ?? ""}</div>
+                      <div className="text-sm font-semibold">{monthLabel(r.period)} · {outletCode}</div>
                       <div className="text-[12px] text-[color:var(--color-ink-soft)]">
                         Due {formatDate(r.due_date)} · {RM2(r.royalty_amount + r.marketing_fee)}
                       </div>
