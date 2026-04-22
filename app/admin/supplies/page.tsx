@@ -59,10 +59,15 @@ export default function AdminSuppliesPage() {
       setOrders(ords.map((o) => ({ ...o, items: byOrder[o.id] ?? [] })));
     };
     load();
-    const id = setInterval(load, 15000);
+    const channel = supabase
+      .channel("admin-supplies")
+      .on("postgres_changes", { event: "*", schema: "public", table: "supply_orders" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "supply_order_items" }, load)
+      .subscribe();
+    const id = setInterval(load, 30000);
     const onFocus = () => load();
     window.addEventListener("focus", onFocus);
-    return () => { clearInterval(id); window.removeEventListener("focus", onFocus); };
+    return () => { supabase.removeChannel(channel); clearInterval(id); window.removeEventListener("focus", onFocus); };
   }, [toast]);
 
   const rows = useMemo(() => {

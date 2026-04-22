@@ -60,10 +60,14 @@ export default function AdminSalesPage() {
       setFranchisees((franchiseeData ?? []) as Franchisee[]);
     };
     load();
-    const id = setInterval(load, 15000);
+    const channel = supabase
+      .channel("admin-sales")
+      .on("postgres_changes", { event: "*", schema: "public", table: "sales_reports" }, load)
+      .subscribe();
+    const id = setInterval(load, 30000);
     const onFocus = () => load();
     window.addEventListener("focus", onFocus);
-    return () => { clearInterval(id); window.removeEventListener("focus", onFocus); };
+    return () => { supabase.removeChannel(channel); clearInterval(id); window.removeEventListener("focus", onFocus); };
   }, [toast]);
 
   const today = new Date().toISOString().slice(0, 10);

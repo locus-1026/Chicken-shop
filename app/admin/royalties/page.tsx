@@ -83,10 +83,15 @@ export default function AdminRoyaltiesPage() {
 
   useEffect(() => {
     load();
-    const id = setInterval(load, 15000);
+    const channel = supabase
+      .channel("admin-royalties")
+      .on("postgres_changes", { event: "*", schema: "public", table: "royalties" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "royalty_proofs" }, load)
+      .subscribe();
+    const id = setInterval(load, 30000);
     const onFocus = () => load();
     window.addEventListener("focus", onFocus);
-    return () => { clearInterval(id); window.removeEventListener("focus", onFocus); };
+    return () => { supabase.removeChannel(channel); clearInterval(id); window.removeEventListener("focus", onFocus); };
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, []);
 

@@ -57,11 +57,16 @@ export default function SuppliesPage() {
 
   useEffect(() => {
     loadHistory();
-    const id = setInterval(loadHistory, 15000);
+    const channel = supabase
+      .channel("portal-supplies-" + outlet.id)
+      .on("postgres_changes", { event: "*", schema: "public", table: "supply_orders" }, loadHistory)
+      .on("postgres_changes", { event: "*", schema: "public", table: "supply_order_items" }, loadHistory)
+      .subscribe();
+    const id = setInterval(loadHistory, 30000);
     const onFocus = () => loadHistory();
     window.addEventListener("focus", onFocus);
-    return () => { clearInterval(id); window.removeEventListener("focus", onFocus); };
-  }, [loadHistory]);
+    return () => { supabase.removeChannel(channel); clearInterval(id); window.removeEventListener("focus", onFocus); };
+  }, [loadHistory, supabase, outlet.id]);
 
   const adjust = (id: string, d: number) =>
     setQty((prev) => ({ ...prev, [id]: Math.max(0, (prev[id] ?? 0) + d) }));

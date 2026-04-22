@@ -56,11 +56,15 @@ export default function SalesPage() {
   useEffect(() => {
     setMessage(null);
     loadReports();
-    const id = setInterval(loadReports, 15000);
+    const channel = supabase
+      .channel("portal-sales-" + outlet.id)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sales_reports" }, loadReports)
+      .subscribe();
+    const id = setInterval(loadReports, 30000);
     const onFocus = () => loadReports();
     window.addEventListener("focus", onFocus);
-    return () => { clearInterval(id); window.removeEventListener("focus", onFocus); };
-  }, [loadReports]);
+    return () => { supabase.removeChannel(channel); clearInterval(id); window.removeEventListener("focus", onFocus); };
+  }, [loadReports, supabase, outlet.id]);
 
   const channelTotal = dineIn + takeaway + delivery;
 

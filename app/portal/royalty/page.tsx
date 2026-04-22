@@ -77,15 +77,21 @@ export default function RoyaltyPage() {
     setLoading(false);
   }, [supabase, outlet.id, toast]);
 
-  // Initial load + lightweight poll + refresh on tab re-focus so the franchisee
-  // sees HQ verifications ("Paid") without manually hitting reload.
+  // Initial load + Supabase Realtime subscriptions so HQ verifications land
+  // within ~1s (no page refresh). 30s fallback poll covers the rare case where
+  // Realtime lost its connection or a table isn't in the publication yet.
   useEffect(() => {
     load();
-    const id = setInterval(load, 15000);
+    const channel = supabase
+      .channel("portal-royalty-" + outlet.id)
+      .on("postgres_changes", { event: "*", schema: "public", table: "royalties" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "royalty_proofs" }, load)
+      .subscribe();
+    const id = setInterval(load, 30000);
     const onFocus = () => load();
     window.addEventListener("focus", onFocus);
-    return () => { clearInterval(id); window.removeEventListener("focus", onFocus); };
-  }, [load]);
+    return () => { supabase.removeChannel(channel); clearInterval(id); window.removeEventListener("focus", onFocus); };
+  }, [load, supabase, outlet.id]);
 
   const effectiveStatus = (r: Royalty): Status => {
     const p = proofs[r.id];

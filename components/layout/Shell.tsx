@@ -11,6 +11,8 @@ interface NavItem {
   href: string;
   label: string;
   icon?: ReactNode;
+  /** Red-dot count rendered after the label — used by HQ to show pending items. */
+  badge?: number;
 }
 
 export function Shell({
@@ -55,7 +57,12 @@ export function Shell({
                 )}
               >
                 {n.icon}
-                {n.label}
+                <span className="flex-1">{n.label}</span>
+                {typeof n.badge === "number" && n.badge > 0 && (
+                  <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[color:var(--color-danger)] px-1.5 text-[11px] font-semibold text-white">
+                    {n.badge > 99 ? "99+" : n.badge}
+                  </span>
+                )}
               </Link>
             );
           })}
@@ -84,11 +91,18 @@ export function Shell({
                 key={n.href}
                 href={n.href}
                 className={cn(
-                  "flex min-w-[60px] flex-col items-center rounded-lg px-2 py-1.5 text-[11px] font-medium",
+                  "relative flex min-w-[60px] flex-col items-center rounded-lg px-2 py-1.5 text-[11px] font-medium",
                   active ? "text-[color:var(--color-brand)]" : "text-[color:var(--color-ink-soft)]"
                 )}
               >
-                <span className="mb-0.5">{n.icon}</span>
+                <span className="mb-0.5 relative">
+                  {n.icon}
+                  {typeof n.badge === "number" && n.badge > 0 && (
+                    <span className="absolute -right-2 -top-1.5 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[color:var(--color-danger)] px-1 text-[10px] font-bold text-white">
+                      {n.badge > 9 ? "9+" : n.badge}
+                    </span>
+                  )}
+                </span>
                 {n.label}
               </Link>
             );
