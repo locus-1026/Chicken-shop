@@ -1,8 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pill } from "@/components/ui/Pill";
-import { mockAnnouncements, mockRoyalties, resolveMockOutletId } from "@/lib/mock-data";
+import { mockAnnouncements } from "@/lib/mock-data";
+import type { Royalty } from "@/lib/types";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useCurrentOutlet } from "@/lib/current-outlet";
 import { formatDate, RM2, daysUntil } from "@/lib/utils";
 import { Pin, Calendar, Megaphone } from "lucide-react";
@@ -12,16 +14,38 @@ export default function AnnouncementsPage() {
   const { outlet } = useCurrentOutlet();
   const [reads, setReads] = useState<Set<string>>(new Set());
 
-  // Dynamic pinned card — shows the nearest outstanding royalty for THIS outlet
-  // and the current marketing campaign. Replaces the old "Welcome forever" card
-  // that was taking up space after every outlet had onboarded.
-  const livePinned = useMemo(() => {
-    const mockOutletId = resolveMockOutletId(outlet);
-    const nextRoyalty = mockRoyalties
-      .filter((r) => r.outlet_id === mockOutletId && r.status !== "paid")
-      .sort((a, b) => (a.due_date < b.due_date ? -1 : 1))[0];
-    return nextRoyalty;
-  }, [outlet]);
+  // Fetch the nearest outstanding royalty for THIS outlet from Supabase so
+  // the pinned card matches what /portal/royalty and HQ actually see.
+  const [outstandingRoyalties, setOutstandingRoyalties] = useState<Royalty[]>([]);
+  const [verifiedByRoyalty, setVerifiedByRoyalty] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient();
+    (async () => {
+      const { data: roys } = await supabase
+        .from("royalties")
+        .select("id, outlet_id, gross_sales, royalty_amount, marketing_fee, due_date, paid_at, status, period:billing_period")
+        .eq("outlet_id", outlet.id)
+        .neq("status", "paid")
+        .order("due_date", { ascending: true });
+      const rs = (roys ?? []) as Royalty[];
+      setOutstandingRoyalties(rs);
+      if (rs.length > 0) {
+        const { data: proofRows } = await supabase
+          .from("royalty_proofs")
+          .select("royalty_id, verified_at")
+          .in("royalty_id", rs.map((r) => r.id));
+        const v: Record<string, boolean> = {};
+        for (const p of (proofRows ?? []) as { royalty_id: string; verified_at: string | null }[]) {
+          if (p.verified_at) v[p.royalty_id] = true;
+        }
+        setVerifiedByRoyalty(v);
+      }
+    })();
+  }, [outlet.id]);
+  const livePinned = useMemo(
+    () => outstandingRoyalties.find((r) => !verifiedByRoyalty[r.id]) ?? null,
+    [outstandingRoyalties, verifiedByRoyalty]
+  );
 
   // Hide the forever-pinned welcome; everything else still flows normally.
   const otherAnnouncements = mockAnnouncements
@@ -67,7 +91,7 @@ export default function AnnouncementsPage() {
           Pinned
         </div>
         <div className="space-y-4">
-          <LivePinnedCard royalty={livePinned} outletCode={outlet.outlet_code} />
+          <LivePinnedCard royalty={livePinned ?? undefined} outletCode={outlet.outlet_code} />
           {pinned.map(renderCard)}
         </div>
       </section>

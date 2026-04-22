@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { notFound, useParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
@@ -13,11 +13,12 @@ import {
   mockAudits,
   mockFranchisees,
   mockOutlets,
-  mockRoyalties,
   mockSalesReports,
   mockTickets,
   mockTrainingModules,
 } from "@/lib/mock-data";
+import type { Royalty } from "@/lib/types";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { RM, RM2, formatDate, monthLabel, daysUntil } from "@/lib/utils";
 import {
   Phone,
@@ -69,10 +70,33 @@ export default function OutletDetailPage() {
     () => mockAudits.filter((a) => a.outlet_id === outlet.id).sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1)),
     [outlet.id]
   );
-  const royalties = useMemo(
-    () => mockRoyalties.filter((r) => r.outlet_id === outlet.id).sort((a, b) => (a.period < b.period ? 1 : -1)),
-    [outlet.id]
-  );
+  // Real royalties + verified-proof ids for this outlet, pulled on mount.
+  const [royalties, setRoyalties] = useState<Royalty[]>([]);
+  const [verifiedByRoyalty, setVerifiedByRoyalty] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    if (!outlet) return;
+    const supabase = createSupabaseBrowserClient();
+    (async () => {
+      const { data: roys } = await supabase
+        .from("royalties")
+        .select("id, outlet_id, gross_sales, royalty_amount, marketing_fee, due_date, paid_at, status, period:billing_period")
+        .eq("outlet_id", outlet.id)
+        .order("billing_period", { ascending: false });
+      const rs = (roys ?? []) as Royalty[];
+      setRoyalties(rs);
+      if (rs.length > 0) {
+        const { data: proofRows } = await supabase
+          .from("royalty_proofs")
+          .select("royalty_id, verified_at")
+          .in("royalty_id", rs.map((r) => r.id));
+        const v: Record<string, boolean> = {};
+        for (const p of (proofRows ?? []) as { royalty_id: string; verified_at: string | null }[]) {
+          if (p.verified_at) v[p.royalty_id] = true;
+        }
+        setVerifiedByRoyalty(v);
+      }
+    })();
+  }, [outlet]);
   const sales = useMemo(
     () => mockSalesReports.filter((r) => r.outlet_id === outlet.id).sort((a, b) => (a.report_date < b.report_date ? 1 : -1)),
     [outlet.id]
@@ -84,7 +108,9 @@ export default function OutletDetailPage() {
 
   const pct = Math.round((outlet.monthly_actual / outlet.monthly_target) * 100);
   const latestRoyalty = royalties[0];
-  const overdueRoyalty = royalties.some((r) => r.status !== "paid" && daysUntil(r.due_date) < 0);
+  const overdueRoyalty = royalties.some(
+    (r) => r.status !== "paid" && !verifiedByRoyalty[r.id] && daysUntil(r.due_date) < 0
+  );
 
   const tone: "success" | "warning" | "danger" =
     overdueRoyalty || (latestAudit && latestAudit.score < 70)
@@ -223,7 +249,8 @@ export default function OutletDetailPage() {
           </div>
           <ul className="mt-3 space-y-2">
             {royalties.slice(0, 3).map((r) => {
-              const st = r.status === "paid" ? "paid" : daysUntil(r.due_date) < 0 ? "overdue" : r.status;
+              const effectivelyPaid = r.status === "paid" || !!verifiedByRoyalty[r.id];
+              const st = effectivelyPaid ? "paid" : daysUntil(r.due_date) < 0 ? "overdue" : r.status;
               return (
                 <li key={r.id} className="flex items-center justify-between rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2.5">
                   <div>

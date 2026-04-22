@@ -7,7 +7,9 @@ import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
 import { Stagger, StaggerItem } from "@/components/ui/Stagger";
 import { SalesDonut } from "@/components/charts/SalesDonut";
-import { mockRoyalties, mockAudits, resolveMockOutletId } from "@/lib/mock-data";
+import { mockAudits, resolveMockOutletId } from "@/lib/mock-data";
+import type { Royalty } from "@/lib/types";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useCurrentOutlet } from "@/lib/current-outlet";
 import { RM, RM2, daysUntil, formatDate } from "@/lib/utils";
 import { Receipt, GraduationCap, ShoppingBasket, LifeBuoy, AlertTriangle, Check, Clock, ArrowUpRight } from "lucide-react";
@@ -24,11 +26,33 @@ const baseTodos: ChecklistItem[] = [
 export default function PortalHome() {
   const { outlet, franchisee } = useCurrentOutlet();
   const mockOutletId = resolveMockOutletId(outlet);
-  const latestRoyalty = mockRoyalties
-    .filter((r) => r.outlet_id === mockOutletId)
-    .sort((a, b) => (a.period < b.period ? 1 : -1))[0];
+  // Live royalty lookup for this outlet — keeps home screen in sync with
+  // /portal/royalty and /admin/royalties.
+  const [latestRoyalty, setLatestRoyalty] = useState<Royalty | null>(null);
+  const [latestVerified, setLatestVerified] = useState(false);
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient();
+    (async () => {
+      const { data: roys } = await supabase
+        .from("royalties")
+        .select("id, outlet_id, gross_sales, royalty_amount, marketing_fee, due_date, paid_at, status, period:billing_period")
+        .eq("outlet_id", outlet.id)
+        .order("billing_period", { ascending: false })
+        .limit(1);
+      const r = ((roys ?? []) as Royalty[])[0] ?? null;
+      setLatestRoyalty(r);
+      if (r) {
+        const { data: proofRows } = await supabase
+          .from("royalty_proofs")
+          .select("verified_at")
+          .eq("royalty_id", r.id)
+          .limit(1);
+        setLatestVerified(!!(proofRows?.[0]?.verified_at));
+      }
+    })();
+  }, [outlet.id]);
   const royaltyStatus = latestRoyalty
-    ? latestRoyalty.status === "paid"
+    ? latestRoyalty.status === "paid" || latestVerified
       ? "paid"
       : daysUntil(latestRoyalty.due_date) < 0
       ? "overdue"

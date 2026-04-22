@@ -1,26 +1,58 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { Stagger, StaggerItem } from "@/components/ui/Stagger";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
-import { mockAudits, mockFranchisees, mockOutlets, mockRoyalties } from "@/lib/mock-data";
-import { RM, monthLabel } from "@/lib/utils";
+import { mockAudits, mockFranchisees, mockOutlets } from "@/lib/mock-data";
+import type { Royalty } from "@/lib/types";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { RM, monthLabel, daysUntil } from "@/lib/utils";
 import { Trophy, AlertTriangle, PhoneCall, FileWarning } from "lucide-react";
 import { ActionModal, type ActionKind } from "@/components/ui/ActionModal";
 
 export default function AdminDashboard() {
   const toast = useToast();
   const [actionTarget, setActionTarget] = useState<{ outletCode: string; ownerName: string; kind: ActionKind } | null>(null);
+  // Real royalties + verified-proof map, so dashboard numbers agree with
+  // /admin/royalties and the franchisee portal.
+  const [royalties, setRoyalties] = useState<Royalty[]>([]);
+  const [verifiedByRoyalty, setVerifiedByRoyalty] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient();
+    (async () => {
+      const { data: roys } = await supabase
+        .from("royalties")
+        .select("id, outlet_id, gross_sales, royalty_amount, marketing_fee, due_date, paid_at, status, period:billing_period")
+        .order("billing_period", { ascending: false });
+      const rs = (roys ?? []) as Royalty[];
+      setRoyalties(rs);
+      if (rs.length > 0) {
+        const { data: proofRows } = await supabase
+          .from("royalty_proofs")
+          .select("royalty_id, verified_at")
+          .in("royalty_id", rs.map((r) => r.id));
+        const v: Record<string, boolean> = {};
+        for (const p of (proofRows ?? []) as { royalty_id: string; verified_at: string | null }[]) {
+          if (p.verified_at) v[p.royalty_id] = true;
+        }
+        setVerifiedByRoyalty(v);
+      }
+    })();
+  }, []);
+
+  const isPaid = (r: Royalty) => r.status === "paid" || !!verifiedByRoyalty[r.id];
+  const isOverdue = (r: Royalty) => !isPaid(r) && (r.status === "overdue" || daysUntil(r.due_date) < 0);
 
   const totalSales = mockOutlets.reduce((s, o) => s + o.monthly_actual, 0);
   const totalTarget = mockOutlets.reduce((s, o) => s + o.monthly_target, 0);
-  const totalRoyalties = mockRoyalties
-    .filter((r) => r.status === "paid")
+  const totalRoyalties = royalties
+    .filter(isPaid)
     .reduce((s, r) => s + r.royalty_amount + r.marketing_fee, 0);
   const avgAuditScore =
     mockAudits.reduce((s, a) => s + a.score, 0) / mockAudits.length;
@@ -35,11 +67,11 @@ export default function AdminDashboard() {
     const latest = mockAudits
       .filter((a) => a.outlet_id === o.id)
       .sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1))[0];
-    const latestRoyalty = mockRoyalties
+    const latestRoyalty = royalties
       .filter((r) => r.outlet_id === o.id)
       .sort((a, b) => (a.period < b.period ? 1 : -1))[0];
     const pct = (o.monthly_actual / o.monthly_target) * 100;
-    const overdue = latestRoyalty?.status === "overdue";
+    const overdue = latestRoyalty ? isOverdue(latestRoyalty) : false;
     let tone: "success" | "warning" | "danger";
     if (overdue || (latest && latest.score < 70)) tone = "danger";
     else if (pct >= 90 && latest && latest.score >= 85) tone = "success";
@@ -50,10 +82,12 @@ export default function AdminDashboard() {
   const top = [...outletsWithStatus].sort((a, b) => b.pct - a.pct).slice(0, 3);
   const bottom = [...outletsWithStatus].sort((a, b) => a.pct - b.pct).slice(0, 3);
 
-  const barData = ["3m","2m","1m"].map((_, i) => ({
-    month: monthLabel(mockRoyalties[i].period),
-    total: mockRoyalties
-      .filter((r) => r.period === mockRoyalties[i].period)
+  // Last 3 distinct billing periods from the real royalties table.
+  const recentPeriods = [...new Set(royalties.map((r) => r.period))].slice(0, 3);
+  const barData = recentPeriods.map((p) => ({
+    month: monthLabel(p),
+    total: royalties
+      .filter((r) => r.period === p)
       .reduce((s, r) => s + r.royalty_amount + r.marketing_fee, 0),
   }));
 
