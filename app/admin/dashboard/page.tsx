@@ -27,6 +27,9 @@ export default function AdminDashboard() {
   // Real franchisees from Supabase — we need the uuid to actually send a
   // notification (mockFranchisees ids like "f-1" don't link to anything).
   const [realFranchisees, setRealFranchisees] = useState<Franchisee[]>([]);
+  // Latest HQ-notification response per franchisee so Needs attention
+  // surfaces "Ahmad accepted" / "Ahmad proposed Thu 2pm" in real time.
+  const [latestResponseByFr, setLatestResponseByFr] = useState<Record<string, { kind: string; status: string; response_note: string | null; responded_at: string }>>({});
   // Remember which franchisees HQ has already coached/noticed (localStorage so
   // it persists across sessions). Shown as a small pill on the "Needs attention"
   // row so HQ knows not to double-action.
@@ -39,15 +42,31 @@ export default function AdminDashboard() {
       if (raw) { try { setActioned(JSON.parse(raw)); } catch { /* ignore */ } }
     }
     const supabase = createSupabaseBrowserClient();
-    (async () => {
-      const [{ data: roys }, { data: fs }] = await Promise.all([
+    const loadAll = async () => {
+      const [{ data: roys }, { data: fs }, { data: profs }, { data: notifs }] = await Promise.all([
         supabase
           .from("royalties")
           .select("id, outlet_id, gross_sales, royalty_amount, marketing_fee, due_date, paid_at, status, period:billing_period")
           .order("billing_period", { ascending: false }),
         supabase.from("franchisees").select("*"),
+        supabase.from("profiles").select("id, franchisee_id"),
+        supabase
+          .from("notifications")
+          .select("recipient_id, kind, status, response_note, responded_at")
+          .not("responded_at", "is", null)
+          .order("responded_at", { ascending: false }),
       ]);
       setRealFranchisees((fs ?? []) as Franchisee[]);
+      // Resolve each response back to its franchisee via profiles.
+      const profByUser: Record<string, string | null> = {};
+      for (const p of ((profs ?? []) as { id: string; franchisee_id: string | null }[])) profByUser[p.id] = p.franchisee_id;
+      const latest: Record<string, { kind: string; status: string; response_note: string | null; responded_at: string }> = {};
+      for (const n of ((notifs ?? []) as { recipient_id: string; kind: string; status: string; response_note: string | null; responded_at: string }[])) {
+        const fid = profByUser[n.recipient_id];
+        if (!fid) continue;
+        if (!latest[fid]) latest[fid] = { kind: n.kind, status: n.status, response_note: n.response_note, responded_at: n.responded_at };
+      }
+      setLatestResponseByFr(latest);
       const rs = (roys ?? []) as Royalty[];
       setRoyalties(rs);
       if (rs.length > 0) {
@@ -61,7 +80,14 @@ export default function AdminDashboard() {
         }
         setVerifiedByRoyalty(v);
       }
-    })();
+    };
+    loadAll();
+    // Live-refresh when a franchisee responds to a notification.
+    const channel = supabase
+      .channel("admin-dashboard-responses")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "notifications" }, loadAll)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   const isPaid = (r: Royalty) => r.status === "paid" || !!verifiedByRoyalty[r.id];
@@ -218,6 +244,18 @@ export default function AdminDashboard() {
                     {history?.notice && (
                       <div className="mt-0.5 text-[11px] font-medium text-[color:var(--color-danger)]">
                         ✓ Warning notice issued · {new Date(history.notice).toLocaleDateString()}
+                      </div>
+                    )}
+                    {real && latestResponseByFr[real.id] && (
+                      <div className="mt-0.5 text-[11px] font-semibold text-[color:var(--color-brand-700)]">
+                        ↳ Franchisee: {
+                          latestResponseByFr[real.id].status === "accepted" ? "accepted your invite"
+                          : latestResponseByFr[real.id].status === "proposed" ? "proposed " + (latestResponseByFr[real.id].response_note ?? "alt time")
+                          : latestResponseByFr[real.id].status === "acknowledged" ? "acknowledged notice"
+                          : latestResponseByFr[real.id].status === "in_progress" ? "on it"
+                          : latestResponseByFr[real.id].status === "done" ? "done"
+                          : latestResponseByFr[real.id].status
+                        }
                       </div>
                     )}
                   </div>

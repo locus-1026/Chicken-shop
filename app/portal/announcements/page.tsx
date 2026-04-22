@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Pill } from "@/components/ui/Pill";
+import { Button } from "@/components/ui/Button";
 import type { Royalty, Announcement } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useCurrentOutlet } from "@/lib/current-outlet";
@@ -18,6 +19,9 @@ type Notification = {
   link: string | null;
   read_at: string | null;
   created_at: string;
+  status?: string;
+  response_note?: string | null;
+  responded_at?: string | null;
 };
 
 export default function AnnouncementsPage() {
@@ -34,7 +38,7 @@ export default function AnnouncementsPage() {
     const refresh = async () => {
       const { data } = await supabase
         .from("notifications")
-        .select("id, kind, title, body, link, read_at, created_at")
+        .select("id, kind, title, body, link, read_at, created_at, status, response_note, responded_at")
         .eq("recipient_id", profile.id)
         .order("created_at", { ascending: false })
         .limit(50);
@@ -194,6 +198,11 @@ export default function AnnouncementsPage() {
 }
 
 function NotificationCard({ n }: { n: Notification }) {
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+  const [proposing, setProposing] = useState(false);
+  const [proposedTime, setProposedTime] = useState("");
+  const [busy, setBusy] = useState(false);
+
   const wasUnread = !n.read_at;
   const Icon =
     n.kind === "coaching_call" ? PhoneCall
@@ -207,7 +216,30 @@ function NotificationCard({ n }: { n: Notification }) {
     tone === "danger" ? "!border-[color:var(--color-danger)] bg-[color:var(--color-danger-soft)]"
     : tone === "brand" ? "!border-[color:var(--color-brand-200)] bg-[color:var(--color-brand-50)]/60"
     : "!border-[color:var(--color-warning)] bg-[color:var(--color-warning-soft)]";
-  const inner = (
+
+  const respond = async (status: string, note?: string) => {
+    setBusy(true);
+    await supabase.from("notifications")
+      .update({ status, response_note: note ?? null, responded_at: new Date().toISOString() })
+      .eq("id", n.id);
+    setBusy(false);
+    setProposing(false);
+  };
+
+  const hasResponded = !!n.responded_at;
+  const statusLabel =
+    n.status === "accepted" ? "You accepted"
+    : n.status === "proposed" ? "You proposed: " + (n.response_note ?? "")
+    : n.status === "acknowledged" ? "You acknowledged"
+    : n.status === "in_progress" ? "Marked as on it"
+    : n.status === "done" ? "Marked done"
+    : null;
+
+  const isCoach = n.kind === "coaching_call";
+  const isNotice = n.kind === "warning_notice";
+  const isNudge = n.kind.startsWith("nudge_");
+
+  return (
     <article className={"rounded-[16px] border p-4 " + borderTone}>
       <div className="flex items-start gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-[color:var(--color-ink)]">
@@ -217,15 +249,58 @@ function NotificationCard({ n }: { n: Notification }) {
           <div className="flex flex-wrap items-center gap-2">
             <h4 className="text-[14px] font-semibold">{n.title}</h4>
             {wasUnread && <Pill tone="danger">New</Pill>}
+            {hasResponded && <Pill tone="success">Responded</Pill>}
           </div>
           <p className="mt-1 text-[13px] leading-relaxed">{n.body}</p>
           <div className="mt-1.5 text-[11px] text-[color:var(--color-ink-soft)]">{formatDate(n.created_at)}</div>
+          {n.link && !hasResponded && (
+            <Link href={n.link} className="mt-2 inline-block text-[12px] font-medium text-[color:var(--color-brand-700)] hover:underline">
+              Open related page →
+            </Link>
+          )}
+
+          {/* Response UI */}
+          {hasResponded ? (
+            <div className="mt-3 rounded-lg bg-white/60 px-3 py-2 text-[12px]">
+              <b>Your response:</b> {statusLabel} · {n.responded_at ? formatDate(n.responded_at) : ""}
+            </div>
+          ) : (
+            <div className="mt-3">
+              {isCoach && !proposing && (
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="success" onClick={() => respond("accepted")} disabled={busy}>Accept time</Button>
+                  <Button size="sm" variant="outline" onClick={() => setProposing(true)} disabled={busy}>Propose another time</Button>
+                </div>
+              )}
+              {isCoach && proposing && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="datetime-local"
+                    value={proposedTime}
+                    onChange={(e) => setProposedTime(e.target.value)}
+                    className="rounded-lg border border-[color:var(--color-border)] bg-white px-2 py-1 text-[12px]"
+                  />
+                  <Button size="sm" onClick={() => respond("proposed", proposedTime)} disabled={!proposedTime || busy}>Send proposal</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setProposing(false)}>Cancel</Button>
+                </div>
+              )}
+              {isNotice && (
+                <Button size="sm" onClick={() => respond("acknowledged")} disabled={busy}>
+                  Acknowledge notice
+                </Button>
+              )}
+              {isNudge && (
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" onClick={() => respond("in_progress")} disabled={busy}>I&apos;m on it</Button>
+                  <Button size="sm" variant="success" onClick={() => respond("done")} disabled={busy}>Done</Button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </article>
   );
-  if (n.link) return <Link href={n.link} className="block transition-all hover:-translate-y-0.5">{inner}</Link>;
-  return inner;
 }
 
 function LivePinnedCard({
