@@ -7,11 +7,11 @@ import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import {
-  mockSupplyOrders,
   mockOutlets,
   mockFranchisees,
 } from "@/lib/mock-data";
 import type { SupplyOrder } from "@/lib/types";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/utils";
 import {
   Package,
@@ -26,39 +26,35 @@ import {
 
 type Status = SupplyOrder["status"];
 const FLOW: Status[] = ["submitted", "confirmed", "shipped", "delivered"];
-const ORDERS_KEY = (outletId: string) => `cc.supply-orders.${outletId}`;
 
 export default function AdminSuppliesPage() {
   const toast = useToast();
-  const [orders, setOrders] = useState<SupplyOrder[]>(mockSupplyOrders);
-
-  // Scan every `cc.supply-orders.*` key (mock ids AND leftover UUIDs) so
-  // franchisee orders always surface even if the per-portal migration hasn't
-  // run yet.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const franchiseeOrders: SupplyOrder[] = [];
-    for (let i = 0; i < window.localStorage.length; i++) {
-      const k = window.localStorage.key(i);
-      if (!k || !k.startsWith("cc.supply-orders.")) continue;
-      const raw = window.localStorage.getItem(k);
-      if (!raw) continue;
-      try {
-        franchiseeOrders.push(...(JSON.parse(raw) as SupplyOrder[]));
-      } catch {
-        /* ignore */
-      }
-    }
-    if (franchiseeOrders.length === 0) return;
-    setOrders((prev) => {
-      const seen = new Set(prev.map((o) => o.id));
-      const additions = franchiseeOrders.filter((o) => !seen.has(o.id));
-      return [...additions, ...prev];
-    });
-  }, []);
+  const [orders, setOrders] = useState<SupplyOrder[]>([]);
   const [filter, setFilter] = useState<"all" | Status>("all");
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient();
+    (async () => {
+      const { data: orderRows, error } = await supabase
+        .from("supply_orders")
+        .select("id, outlet_id, submitted_at, status, total, tracking_note, delivered_at")
+        .order("submitted_at", { ascending: false });
+      if (error) { toast("error", `Couldn't load orders: ${error.message}`); return; }
+      const ords = (orderRows ?? []) as Omit<SupplyOrder, "items">[];
+      if (ords.length === 0) { setOrders([]); return; }
+      const { data: itemRows } = await supabase
+        .from("supply_order_items")
+        .select("order_id, sku, name, unit, qty, unit_price")
+        .in("order_id", ords.map((o) => o.id));
+      const byOrder: Record<string, SupplyOrder["items"]> = {};
+      for (const it of (itemRows ?? []) as (SupplyOrder["items"][number] & { order_id: string })[]) {
+        (byOrder[it.order_id] ??= []).push({ sku: it.sku, name: it.name, unit: it.unit, qty: it.qty, unit_price: it.unit_price });
+      }
+      setOrders(ords.map((o) => ({ ...o, items: byOrder[o.id] ?? [] })));
+    })();
+  }, [toast]);
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -93,45 +89,30 @@ export default function AdminSuppliesPage() {
     .filter((o) => o.status !== "delivered" && o.status !== "cancelled")
     .reduce((s, o) => s + o.total, 0);
 
-  // Persist an order back to its outlet's localStorage bucket so franchisees
-  // see the updated status on their Past orders tab.
-  const syncToLocalStorage = (updated: SupplyOrder) => {
-    if (typeof window === "undefined") return;
-    const key = ORDERS_KEY(updated.outlet_id);
-    const raw = window.localStorage.getItem(key);
-    let list: SupplyOrder[] = [];
-    try {
-      list = raw ? (JSON.parse(raw) as SupplyOrder[]) : [];
-    } catch {
-      list = [];
-    }
-    const idx = list.findIndex((o) => o.id === updated.id);
-    if (idx >= 0) list[idx] = updated;
-    else list.unshift(updated);
-    window.localStorage.setItem(key, JSON.stringify(list));
-  };
-
-  const advance = (id: string) => {
+  const advance = async (id: string) => {
     const current = orders.find((o) => o.id === id);
     if (!current) return;
     const nextStatus = FLOW[Math.min(FLOW.indexOf(current.status) + 1, FLOW.length - 1)] ?? current.status;
     if (nextStatus === current.status) return;
-    const updated: SupplyOrder = {
-      ...current,
-      status: nextStatus,
-      delivered_at: nextStatus === "delivered" ? new Date().toISOString() : current.delivered_at ?? null,
-    };
-    setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
-    syncToLocalStorage(updated);
+    const delivered_at = nextStatus === "delivered" ? new Date().toISOString() : current.delivered_at ?? null;
+    const supabase = createSupabaseBrowserClient();
+    const { error } = await supabase
+      .from("supply_orders")
+      .update({ status: nextStatus, delivered_at })
+      .eq("id", id);
+    if (error) { toast("error", `Update failed: ${error.message}`); return; }
+    setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status: nextStatus, delivered_at } : o)));
     toast("success", `Order ${id.slice(-4)} moved to ${nextStatus}.`);
   };
 
-  const cancel = (id: string) => {
-    const current = orders.find((o) => o.id === id);
-    if (!current) return;
-    const updated: SupplyOrder = { ...current, status: "cancelled" };
-    setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
-    syncToLocalStorage(updated);
+  const cancel = async (id: string) => {
+    const supabase = createSupabaseBrowserClient();
+    const { error } = await supabase
+      .from("supply_orders")
+      .update({ status: "cancelled" })
+      .eq("id", id);
+    if (error) { toast("error", `Cancel failed: ${error.message}`); return; }
+    setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status: "cancelled" } : o)));
     toast("info", `Order ${id.slice(-4)} cancelled.`);
   };
 

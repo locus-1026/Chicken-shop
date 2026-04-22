@@ -9,9 +9,9 @@ import { useToast } from "@/components/ui/Toast";
 import {
   mockOutlets,
   mockFranchisees,
-  mockSalesReports,
 } from "@/lib/mock-data";
 import type { SalesReport } from "@/lib/types";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { RM, formatDate } from "@/lib/utils";
 import {
   TrendingUp,
@@ -34,42 +34,28 @@ function channelTop(mix: SalesReport["channel_mix"]) {
   return `${label} ${top[1]}%`;
 }
 
-const SALES_KEY = (outletId: string) => `cc.sales-new.${outletId}`;
-
 export default function AdminSalesPage() {
   const toast = useToast();
   const [query, setQuery] = useState("");
   const [filterOutlet, setFilterOutlet] = useState<"all" | string>("all");
-  const [localReports, setLocalReports] = useState<SalesReport[]>([]);
+  const [allReports, setAllReports] = useState<SalesReport[]>([]);
 
-  // Scan every `cc.sales-new.*` key so franchisee-submitted reports always
-  // surface, even if they were saved under a Supabase UUID from an older
-  // session that hasn't been migrated yet.
+  // Pull every sales report across every outlet (RLS allows admin to see all).
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const gathered: SalesReport[] = [];
-    for (let i = 0; i < window.localStorage.length; i++) {
-      const k = window.localStorage.key(i);
-      if (!k || !k.startsWith("cc.sales-new.")) continue;
-      const raw = window.localStorage.getItem(k);
-      if (!raw) continue;
-      try {
-        gathered.push(...(JSON.parse(raw) as SalesReport[]));
-      } catch {
-        /* ignore */
+    const supabase = createSupabaseBrowserClient();
+    (async () => {
+      const { data, error } = await supabase
+        .from("sales_reports")
+        .select("id, outlet_id, report_date, gross_sales, transactions, notes, channel_mix, beverage_pct")
+        .order("report_date", { ascending: false })
+        .limit(500);
+      if (error) {
+        toast("error", `Couldn't load sales: ${error.message}`);
+        return;
       }
-    }
-    setLocalReports(gathered);
-  }, []);
-
-  // Merge seed + franchisee-submitted, deduping by (outlet_id, date).
-  const allReports = useMemo(() => {
-    const key = (r: SalesReport) => `${r.outlet_id}:${r.report_date}`;
-    const byKey = new Map<string, SalesReport>();
-    for (const r of mockSalesReports) byKey.set(key(r), r);
-    for (const r of localReports) byKey.set(key(r), r); // local wins
-    return Array.from(byKey.values());
-  }, [localReports]);
+      setAllReports((data ?? []) as SalesReport[]);
+    })();
+  }, [toast]);
 
   const today = new Date().toISOString().slice(0, 10);
   const yesterday = (() => {

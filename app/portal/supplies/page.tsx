@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { useToast } from "@/components/ui/Toast";
 import { useCurrentOutlet } from "@/lib/current-outlet";
-import { mockSupplyOrders, resolveMockOutletId } from "@/lib/mock-data";
 import type { SupplyOrder } from "@/lib/types";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/utils";
 import { Plus, Minus, ShoppingBasket, Package, ChevronDown, ChevronRight } from "lucide-react";
 
@@ -22,55 +22,40 @@ const catalog = [
   { id: "uniform",    name: "Staff uniform polo",      unit: "1 pc",     price: 55,  min: 0, category: "Branding" },
 ];
 
-const ORDERS_KEY = (outletId: string) => `cc.supply-orders.${outletId}`;
-
 export default function SuppliesPage() {
   const toast = useToast();
   const { outlet } = useCurrentOutlet();
-  const mockOutletId = resolveMockOutletId(outlet);
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [tab, setTab] = useState<"order" | "history">("order");
   const [qty, setQty] = useState<Record<string, number>>({});
-  const [locallyPlaced, setLocallyPlaced] = useState<SupplyOrder[]>([]);
+  const [history, setHistory] = useState<SupplyOrder[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  // Load any orders the franchisee placed from this device so they don't vanish
-  // on refresh. We store under the mock outlet id so the admin page can find
-  // them under the same key. If anything is still saved under the raw Supabase
-  // UUID from an earlier session, migrate it over.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const legacy = window.localStorage.getItem(ORDERS_KEY(outlet.id));
-    const current = window.localStorage.getItem(ORDERS_KEY(mockOutletId));
-    if (legacy && outlet.id !== mockOutletId) {
-      try {
-        const merged = [
-          ...(JSON.parse(legacy) as SupplyOrder[]),
-          ...(current ? (JSON.parse(current) as SupplyOrder[]) : []),
-        ];
-        window.localStorage.setItem(ORDERS_KEY(mockOutletId), JSON.stringify(merged));
-        window.localStorage.removeItem(ORDERS_KEY(outlet.id));
-        setLocallyPlaced(merged);
-        return;
-      } catch {
-        // fall through
-      }
+  const loadHistory = useCallback(async () => {
+    const { data: orders, error } = await supabase
+      .from("supply_orders")
+      .select("id, outlet_id, submitted_at, status, total, tracking_note, delivered_at")
+      .eq("outlet_id", outlet.id)
+      .order("submitted_at", { ascending: false });
+    if (error) {
+      toast("error", `Couldn't load orders: ${error.message}`);
+      return;
     }
-    setLocallyPlaced(current ? (JSON.parse(current) as SupplyOrder[]) : []);
-  }, [outlet.id, mockOutletId]);
-
-  const persistPlaced = (next: SupplyOrder[]) => {
-    setLocallyPlaced(next);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(ORDERS_KEY(mockOutletId), JSON.stringify(next));
+    const orderRows = (orders ?? []) as Omit<SupplyOrder, "items">[];
+    if (orderRows.length === 0) { setHistory([]); return; }
+    const { data: itemRows } = await supabase
+      .from("supply_order_items")
+      .select("order_id, sku, name, unit, qty, unit_price")
+      .in("order_id", orderRows.map((o) => o.id));
+    const byOrder: Record<string, SupplyOrder["items"]> = {};
+    for (const it of (itemRows ?? []) as (SupplyOrder["items"][number] & { order_id: string })[]) {
+      (byOrder[it.order_id] ??= []).push({ sku: it.sku, name: it.name, unit: it.unit, qty: it.qty, unit_price: it.unit_price });
     }
-  };
+    setHistory(orderRows.map((o) => ({ ...o, items: byOrder[o.id] ?? [] })));
+  }, [supabase, outlet.id, toast]);
 
-  const history = useMemo(() => {
-    const baseline = mockSupplyOrders.filter((o) => o.outlet_id === mockOutletId);
-    return [...locallyPlaced, ...baseline].sort(
-      (a, b) => (a.submitted_at < b.submitted_at ? 1 : -1)
-    );
-  }, [locallyPlaced, mockOutletId]);
+  useEffect(() => { loadHistory(); }, [loadHistory]);
 
   const adjust = (id: string, d: number) =>
     setQty((prev) => ({ ...prev, [id]: Math.max(0, (prev[id] ?? 0) + d) }));
@@ -78,7 +63,7 @@ export default function SuppliesPage() {
   const totalQty = Object.values(qty).reduce((s, n) => s + n, 0);
   const totalCost = catalog.reduce((s, item) => s + (qty[item.id] ?? 0) * item.price, 0);
 
-  const submit = () => {
+  const submit = async () => {
     if (totalQty === 0) {
       toast("error", "Add at least one item to your order.");
       return;
@@ -86,18 +71,32 @@ export default function SuppliesPage() {
     const items = catalog
       .filter((c) => (qty[c.id] ?? 0) > 0)
       .map((c) => ({ sku: c.id, name: c.name, unit: c.unit, qty: qty[c.id], unit_price: c.price }));
-    const newOrder: SupplyOrder = {
-      id: "so-new-" + Date.now(),
-      outlet_id: mockOutletId,
-      submitted_at: new Date().toISOString(),
-      status: "submitted",
-      items,
-      total: totalCost,
-    };
-    persistPlaced([newOrder, ...locallyPlaced]);
-    toast("success", `Order submitted — ${totalQty} items, RM ${totalCost.toLocaleString()}. HQ confirms in 24h.`);
-    setQty({});
-    setTab("history");
+    setSubmitting(true);
+    try {
+      const { data: inserted, error: orderErr } = await supabase
+        .from("supply_orders")
+        .insert({
+          outlet_id: outlet.id,
+          status: "submitted",
+          total: totalCost,
+        })
+        .select("id")
+        .single();
+      if (orderErr || !inserted) throw new Error(orderErr?.message ?? "Insert failed");
+      const { error: itemsErr } = await supabase
+        .from("supply_order_items")
+        .insert(items.map((it) => ({ order_id: inserted.id, ...it })));
+      if (itemsErr) throw new Error(itemsErr.message);
+      await loadHistory();
+      toast("success", `Order submitted — ${totalQty} items, RM ${totalCost.toLocaleString()}. HQ confirms in 24h.`);
+      setQty({});
+      setTab("history");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Submit failed.";
+      toast("error", msg);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const grouped = catalog.reduce<Record<string, typeof catalog>>((acc, item) => {
@@ -182,7 +181,7 @@ export default function SuppliesPage() {
                   <div className="text-[12px] text-[color:var(--color-ink-soft)]">Order total</div>
                   <div className="text-xl font-semibold">RM {totalCost.toLocaleString()}</div>
                 </div>
-                <Button onClick={submit} size="lg"><ShoppingBasket size={16} /> Submit order</Button>
+                <Button onClick={submit} size="lg" disabled={submitting}><ShoppingBasket size={16} /> {submitting ? "Submitting…" : "Submit order"}</Button>
               </div>
             </Card>
           </div>

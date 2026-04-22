@@ -1,15 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardTitle, CardSubtitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { Sparkline } from "@/components/charts/Sparkline";
 import { fireConfetti } from "@/components/ui/Confetti";
-import { mockSalesReports, resolveMockOutletId } from "@/lib/mock-data";
 import type { SalesReport } from "@/lib/types";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
-const SALES_KEY = (outletId: string) => `cc.sales-new.${outletId}`;
 import { useCurrentOutlet } from "@/lib/current-outlet";
 import { useToast } from "@/components/ui/Toast";
 import { RM, formatDate } from "@/lib/utils";
@@ -27,21 +26,9 @@ function channelPill(mix: ChannelMix | undefined) {
 export default function SalesPage() {
   const { outlet } = useCurrentOutlet();
   const toast = useToast();
-  const mockOutletId = resolveMockOutletId(outlet);
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
-  // Merge baseline seed + any new reports this franchisee has submitted from
-  // this device. Key is shared with the admin Daily sales view so HQ sees them.
-  const loadReports = (): SalesReport[] => {
-    const baseline = mockSalesReports.filter((s) => s.outlet_id === mockOutletId);
-    if (typeof window === "undefined") return [...baseline].sort((a, b) => (a.report_date < b.report_date ? 1 : -1));
-    const raw = window.localStorage.getItem(SALES_KEY(mockOutletId));
-    const local: SalesReport[] = raw ? JSON.parse(raw) : [];
-    const seen = new Set(local.map((r) => r.report_date));
-    const merged = [...local, ...baseline.filter((b) => !seen.has(b.report_date))];
-    return merged.sort((a, b) => (a.report_date < b.report_date ? 1 : -1));
-  };
-
-  const [reports, setReports] = useState<SalesReport[]>(loadReports);
+  const [reports, setReports] = useState<SalesReport[]>([]);
   const [gross, setGross] = useState("");
   const [transactions, setTransactions] = useState("");
   // Channel split sliders — default guided by category benchmarks.
@@ -50,12 +37,26 @@ export default function SalesPage() {
   const [delivery, setDelivery] = useState(20);
   const [beveragePct, setBeveragePct] = useState(15);
   const [message, setMessage] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const loadReports = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("sales_reports")
+      .select("id, outlet_id, report_date, gross_sales, transactions, notes, channel_mix, beverage_pct")
+      .eq("outlet_id", outlet.id)
+      .order("report_date", { ascending: false })
+      .limit(120);
+    if (error) {
+      toast("error", `Couldn't load sales: ${error.message}`);
+      return;
+    }
+    setReports((data ?? []) as SalesReport[]);
+  }, [supabase, outlet.id, toast]);
 
   useEffect(() => {
-    setReports(loadReports());
     setMessage(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mockOutletId]);
+    loadReports();
+  }, [loadReports]);
 
   const channelTotal = dineIn + takeaway + delivery;
 
@@ -91,7 +92,7 @@ export default function SalesPage() {
     };
   }, [reports]);
 
-  const submit = () => {
+  const submit = async () => {
     const g = Number(gross);
     const tx = Number(transactions);
     if (!g || g <= 0) {
@@ -107,35 +108,40 @@ export default function SalesPage() {
       return;
     }
     const today = new Date().toISOString().slice(0, 10);
-    const newReport: SalesReport = {
-      id: "s-new-" + Date.now(),
-      outlet_id: mockOutletId,
-      report_date: today,
-      gross_sales: g,
-      transactions: tx,
-      notes: null,
-      channel_mix: { dine_in: dineIn, takeaway, delivery },
-      beverage_pct: beveragePct,
-    };
-    const next = [newReport, ...reports.filter((r) => r.report_date !== today)];
-    setReports(next);
-    // Persist only the franchisee-submitted ones (dedup by date) so admin can
-    // see the latest without re-reading seed data twice.
-    if (typeof window !== "undefined") {
-      const raw = window.localStorage.getItem(SALES_KEY(mockOutletId));
-      const existing: SalesReport[] = raw ? JSON.parse(raw) : [];
-      const deduped = [newReport, ...existing.filter((r) => r.report_date !== today)];
-      window.localStorage.setItem(SALES_KEY(mockOutletId), JSON.stringify(deduped));
+    setSubmitting(true);
+    try {
+      // Upsert by (outlet_id, report_date) so re-submits replace the existing row.
+      // If today's row exists we delete then insert — simpler than handling PK.
+      await supabase
+        .from("sales_reports")
+        .delete()
+        .eq("outlet_id", outlet.id)
+        .eq("report_date", today);
+      const { error } = await supabase.from("sales_reports").insert({
+        outlet_id: outlet.id,
+        report_date: today,
+        gross_sales: g,
+        transactions: tx,
+        channel_mix: { dine_in: dineIn, takeaway, delivery },
+        beverage_pct: beveragePct,
+      });
+      if (error) throw new Error(error.message);
+      await loadReports();
+      setGross("");
+      setTransactions("");
+      if (g > avg) {
+        setMessage(`🔥 ${RM(g)} beats your daily average of ${RM(Math.round(avg))}. Keep cooking!`);
+        fireConfetti();
+      } else {
+        setMessage(`Logged ${RM(g)} for ${formatDate(today)}.`);
+      }
+      setTimeout(() => setMessage(null), 6000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Submit failed.";
+      toast("error", msg);
+    } finally {
+      setSubmitting(false);
     }
-    setGross("");
-    setTransactions("");
-    if (g > avg) {
-      setMessage(`🔥 ${RM(g)} beats your daily average of ${RM(Math.round(avg))}. Keep cooking!`);
-      fireConfetti();
-    } else {
-      setMessage(`Logged ${RM(g)} for ${formatDate(today)}.`);
-    }
-    setTimeout(() => setMessage(null), 6000);
   };
 
   const weekTotal = reports.slice(0, 7).reduce((s, r) => s + r.gross_sales, 0);
@@ -281,8 +287,8 @@ export default function SalesPage() {
           </div>
 
           <div className="mt-5 flex flex-wrap items-center gap-3">
-            <Button onClick={submit} size="lg" disabled={channelTotal !== 100}>
-              Submit today's sales
+            <Button onClick={submit} size="lg" disabled={channelTotal !== 100 || submitting}>
+              {submitting ? "Submitting…" : "Submit today's sales"}
             </Button>
             {message && (
               <span className="text-[13px] font-medium text-[color:var(--color-success)]">{message}</span>
