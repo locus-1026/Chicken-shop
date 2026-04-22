@@ -6,11 +6,7 @@ import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
-import {
-  mockOutlets,
-  mockFranchisees,
-} from "@/lib/mock-data";
-import type { SupplyOrder } from "@/lib/types";
+import type { SupplyOrder, Outlet, Franchisee } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/utils";
 import {
@@ -30,6 +26,8 @@ const FLOW: Status[] = ["submitted", "confirmed", "shipped", "delivered"];
 export default function AdminSuppliesPage() {
   const toast = useToast();
   const [orders, setOrders] = useState<SupplyOrder[]>([]);
+  const [outlets, setOutlets] = useState<Outlet[]>([]);
+  const [franchisees, setFranchisees] = useState<Franchisee[]>([]);
   const [filter, setFilter] = useState<"all" | Status>("all");
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -37,11 +35,17 @@ export default function AdminSuppliesPage() {
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
     (async () => {
-      const { data: orderRows, error } = await supabase
-        .from("supply_orders")
-        .select("id, outlet_id, submitted_at, status, total, tracking_note, delivered_at")
-        .order("submitted_at", { ascending: false });
+      const [{ data: orderRows, error }, { data: outletData }, { data: franchiseeData }] = await Promise.all([
+        supabase
+          .from("supply_orders")
+          .select("id, outlet_id, submitted_at, status, total, tracking_note, delivered_at")
+          .order("submitted_at", { ascending: false }),
+        supabase.from("outlets").select("*"),
+        supabase.from("franchisees").select("*"),
+      ]);
       if (error) { toast("error", `Couldn't load orders: ${error.message}`); return; }
+      setOutlets((outletData ?? []) as Outlet[]);
+      setFranchisees((franchiseeData ?? []) as Franchisee[]);
       const ords = (orderRows ?? []) as Omit<SupplyOrder, "items">[];
       if (ords.length === 0) { setOrders([]); return; }
       const { data: itemRows } = await supabase
@@ -60,8 +64,8 @@ export default function AdminSuppliesPage() {
     const q = query.trim().toLowerCase();
     return orders
       .map((o) => {
-        const outlet = mockOutlets.find((x) => x.id === o.outlet_id);
-        const franchisee = outlet ? mockFranchisees.find((f) => f.id === outlet.franchisee_id) : undefined;
+        const outlet = outlets.find((x) => x.id === o.outlet_id);
+        const franchisee = outlet ? franchisees.find((f) => f.id === outlet.franchisee_id) : undefined;
         return { ...o, outlet, franchisee };
       })
       .filter((r) => (filter === "all" ? true : r.status === filter))
@@ -74,7 +78,7 @@ export default function AdminSuppliesPage() {
           : true
       )
       .sort((a, b) => (a.submitted_at < b.submitted_at ? 1 : -1));
-  }, [orders, filter, query]);
+  }, [orders, outlets, franchisees, filter, query]);
 
   const counts = useMemo(() => {
     const base: Record<"all" | Status, number> = {

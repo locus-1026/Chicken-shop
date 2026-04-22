@@ -6,11 +6,7 @@ import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
-import {
-  mockOutlets,
-  mockFranchisees,
-} from "@/lib/mock-data";
-import type { SalesReport } from "@/lib/types";
+import type { SalesReport, Outlet, Franchisee } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { RM, formatDate } from "@/lib/utils";
 import {
@@ -39,21 +35,29 @@ export default function AdminSalesPage() {
   const [query, setQuery] = useState("");
   const [filterOutlet, setFilterOutlet] = useState<"all" | string>("all");
   const [allReports, setAllReports] = useState<SalesReport[]>([]);
+  const [outlets, setOutlets] = useState<Outlet[]>([]);
+  const [franchisees, setFranchisees] = useState<Franchisee[]>([]);
 
   // Pull every sales report across every outlet (RLS allows admin to see all).
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
     (async () => {
-      const { data, error } = await supabase
-        .from("sales_reports")
-        .select("id, outlet_id, report_date, gross_sales, transactions, notes, channel_mix, beverage_pct")
-        .order("report_date", { ascending: false })
-        .limit(500);
+      const [{ data: reports, error }, { data: outletData }, { data: franchiseeData }] = await Promise.all([
+        supabase
+          .from("sales_reports")
+          .select("id, outlet_id, report_date, gross_sales, transactions, notes, channel_mix, beverage_pct")
+          .order("report_date", { ascending: false })
+          .limit(500),
+        supabase.from("outlets").select("*").order("outlet_code"),
+        supabase.from("franchisees").select("*"),
+      ]);
       if (error) {
         toast("error", `Couldn't load sales: ${error.message}`);
         return;
       }
-      setAllReports((data ?? []) as SalesReport[]);
+      setAllReports((reports ?? []) as SalesReport[]);
+      setOutlets((outletData ?? []) as Outlet[]);
+      setFranchisees((franchiseeData ?? []) as Franchisee[]);
     })();
   }, [toast]);
 
@@ -67,8 +71,8 @@ export default function AdminSalesPage() {
   // Per-outlet: today's submission + last 7-day rollup.
   const perOutlet = useMemo(
     () =>
-      mockOutlets.map((o) => {
-        const franchisee = mockFranchisees.find((f) => f.id === o.franchisee_id);
+      outlets.map((o) => {
+        const franchisee = franchisees.find((f) => f.id === o.franchisee_id);
         const reports = allReports.filter((r) => r.outlet_id === o.id);
         const todays = reports.find((r) => r.report_date === today);
         const yesterdays = reports.find((r) => r.report_date === yesterday);
@@ -79,7 +83,7 @@ export default function AdminSalesPage() {
         const latest = [...reports].sort((a, b) => (a.report_date < b.report_date ? 1 : -1))[0];
         return { outlet: o, franchisee, todays, yesterdays, latest, week };
       }),
-    [today, yesterday, allReports]
+    [today, yesterday, allReports, outlets, franchisees]
   );
 
   const submittedToday = perOutlet.filter((p) => p.todays).length;
@@ -92,8 +96,8 @@ export default function AdminSalesPage() {
     const q = query.trim().toLowerCase();
     return allReports
       .map((r) => {
-        const outlet = mockOutlets.find((o) => o.id === r.outlet_id);
-        const franchisee = outlet ? mockFranchisees.find((f) => f.id === outlet.franchisee_id) : undefined;
+        const outlet = outlets.find((o) => o.id === r.outlet_id);
+        const franchisee = outlet ? franchisees.find((f) => f.id === outlet.franchisee_id) : undefined;
         return { ...r, outlet, franchisee };
       })
       .filter((r) => (filterOutlet === "all" ? true : r.outlet?.id === filterOutlet))
@@ -106,7 +110,7 @@ export default function AdminSalesPage() {
       )
       .sort((a, b) => (a.report_date < b.report_date ? 1 : -1))
       .slice(0, 30);
-  }, [query, filterOutlet, allReports]);
+  }, [query, filterOutlet, allReports, outlets, franchisees]);
 
   const exportCsv = () => {
     const rows = [
@@ -153,9 +157,9 @@ export default function AdminSalesPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi
           label="Submitted today"
-          value={`${submittedToday}/${mockOutlets.length}`}
-          sub={submittedToday === mockOutlets.length ? "All outlets in" : `${mockOutlets.length - submittedToday} still pending`}
-          tone={submittedToday === mockOutlets.length ? "success" : submittedToday >= mockOutlets.length - 1 ? "warning" : "danger"}
+          value={`${submittedToday}/${outlets.length}`}
+          sub={submittedToday === outlets.length ? "All outlets in" : `${outlets.length - submittedToday} still pending`}
+          tone={submittedToday === outlets.length ? "success" : submittedToday >= outlets.length - 1 ? "warning" : "danger"}
         />
         <Kpi
           label="Group sales today"
@@ -260,7 +264,7 @@ export default function AdminSalesPage() {
               className="rounded-full border border-[color:var(--color-border)] bg-white px-3 py-1.5 text-sm"
             >
               <option value="all">All outlets</option>
-              {mockOutlets.map((o) => (
+              {outlets.map((o) => (
                 <option key={o.id} value={o.id}>{o.outlet_code} · {o.state}</option>
               ))}
             </select>
