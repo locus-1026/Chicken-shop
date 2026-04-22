@@ -254,17 +254,10 @@ function PortalShell({ children }: { children: React.ReactNode }) {
       headerRight={
         <div className="flex items-center gap-2">
           <button
-            onClick={async () => {
-              if (!profile?.id) return;
-              // Mark everything read on click.
-              await supabase.from("notifications").update({ read_at: new Date().toISOString() })
-                .eq("recipient_id", profile.id).is("read_at", null);
-              setUnreadNotifications(0);
-              toast("info", "All notifications marked read.");
-            }}
+            onClick={() => router.push("/portal/announcements")}
             className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--color-border)] bg-white text-[color:var(--color-ink-soft)] hover:border-[color:var(--color-brand)] hover:text-[color:var(--color-brand-700)]"
-            aria-label="Notifications"
-            title={unreadNotifications > 0 ? `${unreadNotifications} unread HQ notifications` : "No unread notifications"}
+            aria-label="Open notifications"
+            title={unreadNotifications > 0 ? `${unreadNotifications} unread HQ notifications — click to view` : "View notifications"}
           >
             <Bell size={16} />
             {unreadNotifications > 0 && (
