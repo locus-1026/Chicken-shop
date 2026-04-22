@@ -49,7 +49,7 @@ export default function CalendarPage() {
     const [{ data: coaching }, { data: royalties }] = await Promise.all([
       supabase
         .from("notifications")
-        .select("id, kind, title, body, scheduled_at, status, response_note")
+        .select("id, kind, title, body, scheduled_at, status, response_note, responded_at")
         .eq("recipient_id", profile.id)
         .eq("kind", "coaching_call")
         .not("scheduled_at", "is", null),
@@ -61,16 +61,21 @@ export default function CalendarPage() {
     ]);
 
     const merged: CalEvent[] = [];
-    for (const c of ((coaching ?? []) as { id: string; title: string; body: string; scheduled_at: string; status?: string; response_note?: string | null }[])) {
+    for (const c of ((coaching ?? []) as { id: string; title: string; body: string; scheduled_at: string; status?: string; response_note?: string | null; responded_at?: string | null }[])) {
+      // Only honour a status if the franchisee actually clicked a button
+      // (responded_at set). Defensive — stops stale/default status values
+      // (e.g. "accepted" written by HQ or from seed) from showing a pill
+      // the user never chose.
+      const effectiveStatus = c.responded_at ? c.status : undefined;
       merged.push({
         id: "coach-" + c.id,
         kind: "coaching",
         at: c.scheduled_at,
         title: "Coaching call",
         body: c.body,
-        tone: c.status === "accepted" ? "success" : c.status === "proposed" ? "warning" : "brand",
-        status: c.status,
-        proposedTime: c.status === "proposed" ? (c.response_note ?? undefined) : undefined,
+        tone: effectiveStatus === "accepted" ? "success" : effectiveStatus === "proposed" ? "warning" : "brand",
+        status: effectiveStatus,
+        proposedTime: effectiveStatus === "proposed" ? (c.response_note ?? undefined) : undefined,
       });
     }
     for (const r of ((royalties ?? []) as { id: string; due_date: string; royalty_amount: number; marketing_fee: number; period: string }[])) {

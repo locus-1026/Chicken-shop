@@ -58,7 +58,7 @@ export default function AdminCalendarPage() {
     const [{ data: coaching }, { data: royalties }, { data: outlets }, { data: franchisees }, { data: profs }] = await Promise.all([
       supabase
         .from("notifications")
-        .select("id, recipient_id, title, body, scheduled_at, status, response_note")
+        .select("id, recipient_id, title, body, scheduled_at, status, response_note, responded_at")
         .eq("kind", "coaching_call")
         .not("scheduled_at", "is", null),
       supabase
@@ -78,7 +78,7 @@ export default function AdminCalendarPage() {
 
     const seenCoach = new Set<string>();
     const merged: CalEvent[] = [];
-    for (const c of ((coaching ?? []) as { id: string; recipient_id: string; title: string; body: string; scheduled_at: string; status?: string; response_note?: string | null }[])) {
+    for (const c of ((coaching ?? []) as { id: string; recipient_id: string; title: string; body: string; scheduled_at: string; status?: string; response_note?: string | null; responded_at?: string | null }[])) {
       const prof = profList.find((p) => p.id === c.recipient_id);
       const fr = prof?.franchisee_id ? fById.get(prof.franchisee_id) : undefined;
       const theirOutlet = outletList.find((o) => o.franchisee_id === fr?.id);
@@ -88,6 +88,9 @@ export default function AdminCalendarPage() {
       const subject = fr
         ? `${theirOutlet?.outlet_code ? theirOutlet.outlet_code + " · " : ""}${fr.owner_name}`
         : (prof?.full_name ?? "Franchisee");
+      // Only honour a status after the franchisee has actually pressed a
+      // response button — stale/default statuses shouldn't mislead HQ.
+      const effectiveStatus = c.responded_at ? c.status : undefined;
       merged.push({
         id: "coach-" + c.id,
         kind: "coaching",
@@ -95,9 +98,9 @@ export default function AdminCalendarPage() {
         title: "Coaching call",
         body: c.body,
         subject,
-        tone: c.status === "accepted" ? "success" : c.status === "proposed" ? "warning" : "brand",
-        status: c.status,
-        proposedTime: c.status === "proposed" ? (c.response_note ?? undefined) : undefined,
+        tone: effectiveStatus === "accepted" ? "success" : effectiveStatus === "proposed" ? "warning" : "brand",
+        status: effectiveStatus,
+        proposedTime: effectiveStatus === "proposed" ? (c.response_note ?? undefined) : undefined,
         link: theirOutlet ? `/admin/outlets/${theirOutlet.outlet_code}` : undefined,
       });
     }
