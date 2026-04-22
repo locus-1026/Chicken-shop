@@ -7,7 +7,14 @@ import { Pill } from "@/components/ui/Pill";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Outlet, Franchisee } from "@/lib/types";
 import { monthLabel, daysUntil } from "@/lib/utils";
-import { PhoneCall, Receipt, Calendar as CalIcon, CheckCircle2, Clock, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
+import { PhoneCall, Receipt, Calendar as CalIcon, CheckCircle2, Clock, AlertTriangle, ChevronDown, ChevronRight, X } from "lucide-react";
+
+function toISODate(d: Date) { return d.toISOString().slice(0, 10); }
+function addDays(d: Date, n: number) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
+function startOfWeek(d: Date) { const r = new Date(d); const day = r.getDay(); r.setDate(r.getDate() - day); return r; }
+function startOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth(), 1); }
+function endOfMonth(d: Date) { return new Date(d.getFullYear(), d.getMonth() + 1, 0); }
+type Preset = "all" | "today" | "week" | "month" | "custom";
 
 type CalEvent = {
   id: string;
@@ -39,6 +46,18 @@ export default function AdminCalendarPage() {
   const [events, setEvents] = useState<CalEvent[]>([]);
   const [filter, setFilter] = useState<Filter>("all");
   const [showPast, setShowPast] = useState(false);
+  const [preset, setPreset] = useState<Preset>("all");
+  const [from, setFrom] = useState<string>("");
+  const [to, setTo] = useState<string>("");
+
+  const applyPreset = (p: Preset) => {
+    setPreset(p);
+    const now = new Date();
+    if (p === "all") { setFrom(""); setTo(""); }
+    else if (p === "today") { setFrom(toISODate(now)); setTo(toISODate(now)); }
+    else if (p === "week") { setFrom(toISODate(startOfWeek(now))); setTo(toISODate(addDays(startOfWeek(now), 6))); }
+    else if (p === "month") { setFrom(toISODate(startOfMonth(now))); setTo(toISODate(endOfMonth(now))); }
+  };
 
   const load = useCallback(async () => {
     const [{ data: coaching }, { data: royalties }, { data: outlets }, { data: franchisees }, { data: profs }] = await Promise.all([
@@ -117,7 +136,14 @@ export default function AdminCalendarPage() {
     return () => { supabase.removeChannel(channel); };
   }, [load, supabase]);
 
-  const filtered = events.filter((e) => filter === "all" || e.kind === filter);
+  const filtered = events.filter((e) => {
+    if (filter !== "all" && e.kind !== filter) return false;
+    const d = e.at.slice(0, 10);
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    return true;
+  });
+  const dateFilterActive = !!(from || to);
   const upcoming = filtered.filter((e) => bucket(e.at) !== "past");
   const past = filtered.filter((e) => bucket(e.at) === "past");
   const nextUp = upcoming[0];
@@ -158,6 +184,40 @@ export default function AdminCalendarPage() {
         <FilterTab active={filter === "all"} onClick={() => setFilter("all")} label="All" count={upcoming.length} />
         <FilterTab active={filter === "coaching"} onClick={() => setFilter("coaching")} label="Coaching" count={coachingCount} icon={<PhoneCall size={12} />} />
         <FilterTab active={filter === "royalty_due"} onClick={() => setFilter("royalty_due")} label="Royalties" count={royaltyCount} icon={<Receipt size={12} />} />
+      </div>
+
+      {/* Date range filter */}
+      <div className="rounded-[14px] border border-[color:var(--color-border)] bg-white p-3">
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          <PresetChip active={preset === "all" && !dateFilterActive} onClick={() => applyPreset("all")} label="All dates" />
+          <PresetChip active={preset === "today"} onClick={() => applyPreset("today")} label="Today" />
+          <PresetChip active={preset === "week"} onClick={() => applyPreset("week")} label="This week" />
+          <PresetChip active={preset === "month"} onClick={() => applyPreset("month")} label="This month" />
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-[12px]">
+          <label className="text-[color:var(--color-ink-soft)]">From</label>
+          <input
+            type="date"
+            value={from}
+            onChange={(e) => { setFrom(e.target.value); setPreset("custom"); }}
+            className="rounded-md border border-[color:var(--color-border)] bg-white px-2 py-1 text-[12px]"
+          />
+          <label className="text-[color:var(--color-ink-soft)]">To</label>
+          <input
+            type="date"
+            value={to}
+            onChange={(e) => { setTo(e.target.value); setPreset("custom"); }}
+            className="rounded-md border border-[color:var(--color-border)] bg-white px-2 py-1 text-[12px]"
+          />
+          {dateFilterActive && (
+            <button
+              onClick={() => applyPreset("all")}
+              className="inline-flex items-center gap-1 rounded-full border border-[color:var(--color-border)] bg-white px-2 py-0.5 text-[11px] text-[color:var(--color-ink-soft)] hover:text-[color:var(--color-ink)]"
+            >
+              <X size={10} /> Clear
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Next up hero */}
@@ -235,6 +295,22 @@ function Kpi({ label, value, tone }: { label: string; value: number; tone?: "bra
       <div className="text-[11px] font-medium uppercase tracking-wider text-[color:var(--color-ink-soft)]">{label}</div>
       <div className={"mt-1 text-[24px] font-semibold leading-none " + cls}>{value}</div>
     </div>
+  );
+}
+
+function PresetChip({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      className={
+        "rounded-full border px-2.5 py-1 text-[11px] font-medium transition-all " +
+        (active
+          ? "border-[color:var(--color-brand-200)] bg-[color:var(--color-brand-50)] text-[color:var(--color-brand-700)]"
+          : "border-[color:var(--color-border)] bg-white text-[color:var(--color-ink-soft)] hover:text-[color:var(--color-ink)]")
+      }
+    >
+      {label}
+    </button>
   );
 }
 
