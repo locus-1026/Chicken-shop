@@ -3,34 +3,44 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
-import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import type { SupplyOrder, Outlet, Franchisee } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/utils";
 import {
-  Package,
-  ChevronDown,
-  ChevronRight,
-  Check,
-  Truck,
-  PackageCheck,
-  X as XIcon,
-  Search,
+  Package, Check, Truck, PackageCheck, X as XIcon, Search,
+  AlertTriangle, Hourglass, Box, Truck as TruckIcon, CheckCircle2, CornerUpLeft,
 } from "lucide-react";
 
 type Status = SupplyOrder["status"];
 const FLOW: Status[] = ["submitted", "confirmed", "shipped", "delivered"];
+
+type Column = {
+  key: Status;
+  title: string;
+  emoji: string;
+  icon: typeof AlertTriangle;
+  color: string;       // hex or css var — column top border + count tint
+  ring: string;        // card accent border-top
+};
+
+const COLUMNS: Column[] = [
+  { key: "submitted", title: "Pending Review", emoji: "⚠️",  icon: AlertTriangle,  color: "#ef4444", ring: "border-t-[#ef4444]" },
+  { key: "confirmed", title: "Processing",     emoji: "⏳",  icon: Hourglass,      color: "#f59e0b", ring: "border-t-[#f59e0b]" },
+  { key: "shipped",   title: "Out for Delivery", emoji: "🚚", icon: TruckIcon,     color: "#3b82f6", ring: "border-t-[#3b82f6]" },
+  { key: "delivered", title: "Delivered",      emoji: "✅",  icon: CheckCircle2,   color: "#10b981", ring: "border-t-[#10b981]" },
+  { key: "cancelled", title: "Cancelled",      emoji: "↩️",  icon: CornerUpLeft,   color: "#f97316", ring: "border-t-[#f97316]" },
+];
+
+type Row = SupplyOrder & { outlet?: Outlet; franchisee?: Franchisee };
 
 export default function AdminSuppliesPage() {
   const toast = useToast();
   const [orders, setOrders] = useState<SupplyOrder[]>([]);
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [franchisees, setFranchisees] = useState<Franchisee[]>([]);
-  const [filter, setFilter] = useState<"all" | Status>("all");
   const [query, setQuery] = useState("");
-  const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -64,27 +74,17 @@ export default function AdminSuppliesPage() {
       .on("postgres_changes", { event: "*", schema: "public", table: "supply_orders" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "supply_order_items" }, load)
       .subscribe();
-    const id = setInterval(load, 30000);
-    const onFocus = () => load();
-    window.addEventListener("focus", onFocus);
-    return () => { supabase.removeChannel(channel); clearInterval(id); window.removeEventListener("focus", onFocus); };
+    return () => { supabase.removeChannel(channel); };
   }, [toast]);
 
-  const rows = useMemo(() => {
+  const rows = useMemo<Row[]>(() => {
     const q = query.trim().toLowerCase();
-    // Priority ordering: submitted (needs HQ to confirm) first, then confirmed
-    // (needs shipping), then shipped, then delivered/cancelled. Within each
-    // bucket, newest first.
-    const priority: Record<Status, number> = {
-      submitted: 0, confirmed: 1, shipped: 2, delivered: 3, cancelled: 4,
-    };
     return orders
       .map((o) => {
         const outlet = outlets.find((x) => x.id === o.outlet_id);
         const franchisee = outlet ? franchisees.find((f) => f.id === outlet.franchisee_id) : undefined;
         return { ...o, outlet, franchisee };
       })
-      .filter((r) => (filter === "all" ? true : r.status === filter))
       .filter((r) =>
         q
           ? (r.outlet?.outlet_code ?? "").toLowerCase().includes(q) ||
@@ -92,24 +92,26 @@ export default function AdminSuppliesPage() {
             (r.franchisee?.owner_name ?? "").toLowerCase().includes(q) ||
             r.items.some((it) => it.name.toLowerCase().includes(q))
           : true
-      )
-      .sort((a, b) => {
-        const ap = priority[a.status] ?? 99;
-        const bp = priority[b.status] ?? 99;
-        if (ap !== bp) return ap - bp;
-        return a.submitted_at < b.submitted_at ? 1 : -1;
-      });
-  }, [orders, outlets, franchisees, filter, query]);
+      );
+  }, [orders, outlets, franchisees, query]);
 
-  const counts = useMemo(() => {
-    const base: Record<"all" | Status, number> = {
-      all: orders.length,
-      submitted: 0, confirmed: 0, shipped: 0, delivered: 0, cancelled: 0,
-    };
-    for (const o of orders) base[o.status] += 1;
-    return base;
-  }, [orders]);
+  const byColumn = useMemo(() => {
+    const m: Record<Status, Row[]> = { submitted: [], confirmed: [], shipped: [], delivered: [], cancelled: [] };
+    for (const r of rows) m[r.status].push(r);
+    // newest first inside each column
+    for (const k of Object.keys(m) as Status[]) {
+      m[k].sort((a, b) => (a.submitted_at < b.submitted_at ? 1 : -1));
+    }
+    return m;
+  }, [rows]);
 
+  const counts = {
+    submitted: byColumn.submitted.length,
+    confirmed: byColumn.confirmed.length,
+    shipped: byColumn.shipped.length,
+    delivered: byColumn.delivered.length,
+    cancelled: byColumn.cancelled.length,
+  };
   const totalOpenValue = orders
     .filter((o) => o.status !== "delivered" && o.status !== "cancelled")
     .reduce((s, o) => s + o.total, 0);
@@ -127,7 +129,7 @@ export default function AdminSuppliesPage() {
       .eq("id", id);
     if (error) { toast("error", `Update failed: ${error.message}`); return; }
     setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status: nextStatus, delivered_at } : o)));
-    toast("success", `Order ${id.slice(-4)} moved to ${nextStatus}.`);
+    toast("success", `Order moved to ${nextStatus}.`);
   };
 
   const cancel = async (id: string) => {
@@ -138,13 +140,13 @@ export default function AdminSuppliesPage() {
       .eq("id", id);
     if (error) { toast("error", `Cancel failed: ${error.message}`); return; }
     setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status: "cancelled" } : o)));
-    toast("info", `Order ${id.slice(-4)} cancelled.`);
+    toast("info", `Order cancelled.`);
   };
 
   return (
     <div className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi label="Awaiting action" value={`${counts.submitted}`}  sub="Need HQ confirmation" tone={counts.submitted > 0 ? "warning" : "success"} />
+        <Kpi label="Awaiting action" value={`${counts.submitted}`} sub="Need HQ confirmation" tone={counts.submitted > 0 ? "warning" : "success"} />
         <Kpi label="In fulfilment"   value={`${counts.confirmed + counts.shipped}`} sub="Confirmed + shipped" />
         <Kpi label="Delivered"       value={`${counts.delivered}`} sub="Lifetime" />
         <Kpi label="Open order value" value={`RM ${totalOpenValue.toLocaleString()}`} sub="Submitted → shipped" tone="brand" />
@@ -154,154 +156,167 @@ export default function AdminSuppliesPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle>
-              <span className="inline-flex items-center gap-2"><Package size={16} className="text-[color:var(--color-brand)]" /> Supply orders</span>
+              <span className="inline-flex items-center gap-2"><Package size={16} className="text-[color:var(--color-brand)]" /> Orders board</span>
             </CardTitle>
-            <CardSubtitle>Confirm, ship, and close out franchisee requests here.</CardSubtitle>
+            <CardSubtitle>Drag-style kanban view — each column is a fulfilment stage.</CardSubtitle>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--color-ink-soft)]" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Outlet, owner, item…"
-                className="w-64 rounded-full border border-[color:var(--color-border)] bg-white py-1.5 pl-8 pr-3 text-sm focus:border-[color:var(--color-brand)] focus:outline-none"
-              />
-            </div>
+          <div className="relative">
+            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--color-ink-soft)]" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Outlet, owner, item…"
+              className="w-64 rounded-full border border-[color:var(--color-border)] bg-white py-1.5 pl-8 pr-3 text-sm focus:border-[color:var(--color-brand)] focus:outline-none"
+            />
           </div>
-        </div>
-
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {(["all", "submitted", "confirmed", "shipped", "delivered", "cancelled"] as const).map((s) => (
-            <button
-              key={s}
-              onClick={() => setFilter(s)}
-              className={
-                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] transition-colors " +
-                (filter === s
-                  ? "border-[color:var(--color-brand)] bg-[color:var(--color-brand)] text-white"
-                  : "border-[color:var(--color-border)] bg-white text-[color:var(--color-ink-soft)] hover:border-[color:var(--color-brand-200)]")
-              }
-            >
-              {s === "all" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
-              <span className={"rounded-full px-1.5 text-[10px] font-semibold " + (filter === s ? "bg-white/20" : "bg-[color:var(--color-brand-50)] text-[color:var(--color-brand-700)]")}>
-                {counts[s]}
-              </span>
-            </button>
-          ))}
         </div>
       </Card>
 
-      {rows.length === 0 ? (
-        <Card>
-          <div className="py-12 text-center text-sm text-[color:var(--color-ink-soft)]">
-            No orders match this filter.
+      {/* Kanban board */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        {COLUMNS.map((col) => (
+          <KanbanColumn
+            key={col.key}
+            col={col}
+            items={byColumn[col.key]}
+            count={byColumn[col.key].length}
+            onAdvance={advance}
+            onCancel={cancel}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function KanbanColumn({
+  col, items, count, onAdvance, onCancel,
+}: {
+  col: Column;
+  items: Row[];
+  count: number;
+  onAdvance: (id: string) => void;
+  onCancel: (id: string) => void;
+}) {
+  const Icon = col.icon;
+  return (
+    <div className="flex flex-col rounded-[14px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-soft)]/40">
+      {/* Column header */}
+      <div
+        className="flex items-center justify-between rounded-t-[14px] border-t-[3px] bg-white px-3 py-2.5"
+        style={{ borderTopColor: col.color }}
+      >
+        <div className="inline-flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: col.color }}>
+          <Icon size={14} /> {col.title}
+        </div>
+        <span
+          className="inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold"
+          style={{ background: `${col.color}1A`, color: col.color }}
+        >
+          {count}
+        </span>
+      </div>
+
+      {/* Cards */}
+      <div className="flex flex-col gap-2.5 p-2.5">
+        {items.length === 0 ? (
+          <div className="rounded-[12px] border-2 border-dashed border-[color:var(--color-border)] px-3 py-8 text-center text-[12px] text-[color:var(--color-ink-soft)]">
+            <Icon size={14} className="mx-auto mb-1 opacity-40" /> No orders
           </div>
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {rows.map((r) => {
-            const isOpen = expanded === r.id;
-            const itemCount = r.items.reduce((s, it) => s + it.qty, 0);
-            const canAdvance = r.status !== "delivered" && r.status !== "cancelled";
-            // Submitted orders are what HQ *must* touch next — visually
-            // distinguish them so they don't get lost in a long list.
-            const needsAction = r.status === "submitted";
-            return (
-              <Card key={r.id} className={"!p-0 overflow-hidden " + (needsAction ? "!border-[color:var(--color-danger)] !border-2 bg-[color:var(--color-danger-soft)]/30" : "")}>
-                <button
-                  onClick={() => setExpanded(isOpen ? null : r.id)}
-                  className="flex w-full items-center gap-4 px-4 py-3 text-left hover:bg-[color:var(--color-brand-50)]/40"
-                >
-                  {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {needsAction && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-[color:var(--color-danger)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
-                          <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" /> Needs action
-                        </span>
-                      )}
-                      <span className="font-semibold">{r.outlet?.outlet_code ?? "—"}</span>
-                      <span className="text-[13px] text-[color:var(--color-ink-soft)]">·</span>
-                      <span className="truncate text-[13px]">{r.outlet?.location ?? ""}</span>
-                      <span className="text-[12px] text-[color:var(--color-ink-soft)]">
-                        · {r.franchisee?.owner_name ?? "—"}
-                      </span>
-                    </div>
-                    <div className="mt-0.5 text-[12px] text-[color:var(--color-ink-soft)]">
-                      Placed {formatDate(r.submitted_at)} · {itemCount} items · RM {r.total.toLocaleString()}
-                    </div>
-                  </div>
-                  <StatusPill status={r.status} />
-                </button>
+        ) : (
+          items.map((r) => <OrderCard key={r.id} r={r} col={col} onAdvance={onAdvance} onCancel={onCancel} />)
+        )}
+      </div>
+    </div>
+  );
+}
 
-                {isOpen && (
-                  <div className="border-t border-[color:var(--color-border)] bg-[color:var(--color-background)] px-4 py-3">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-left text-[11px] uppercase tracking-wide text-[color:var(--color-ink-soft)]">
-                            <th className="py-2 pr-4">Item</th>
-                            <th className="py-2 pr-4">Unit</th>
-                            <th className="py-2 pr-4 text-right">Qty</th>
-                            <th className="py-2 pr-4 text-right">Unit price</th>
-                            <th className="py-2 pr-4 text-right">Subtotal</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {r.items.map((it) => (
-                            <tr key={it.sku} className="border-t border-[color:var(--color-border)]">
-                              <td className="py-2 pr-4 font-medium">{it.name}</td>
-                              <td className="py-2 pr-4 text-[color:var(--color-ink-soft)]">{it.unit}</td>
-                              <td className="py-2 pr-4 text-right">{it.qty}</td>
-                              <td className="py-2 pr-4 text-right">RM {it.unit_price}</td>
-                              <td className="py-2 pr-4 text-right font-semibold">RM {(it.qty * it.unit_price).toLocaleString()}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr className="border-t-2 border-[color:var(--color-border)]">
-                            <td colSpan={4} className="py-2 pr-4 text-right text-[12px] font-semibold uppercase tracking-wide text-[color:var(--color-ink-soft)]">Order total</td>
-                            <td className="py-2 pr-4 text-right font-semibold">RM {r.total.toLocaleString()}</td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
+function OrderCard({
+  r, col, onAdvance, onCancel,
+}: {
+  r: Row;
+  col: Column;
+  onAdvance: (id: string) => void;
+  onCancel: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const itemCount = r.items.reduce((s, it) => s + it.qty, 0);
+  const canAdvance = r.status !== "delivered" && r.status !== "cancelled";
+  const orderNo = "ORD-" + r.id.slice(-8).toUpperCase();
+  const itemsPreview = r.items.slice(0, 2).map((it) => `${it.name} ×${it.qty}`).join(", ") + (r.items.length > 2 ? "…" : "");
 
-                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                      <div className="text-[12px] text-[color:var(--color-ink-soft)]">
-                        <FulfilmentTracker status={r.status} />
-                        {r.delivered_at && <> · Delivered {formatDate(r.delivered_at)}</>}
-                        {r.tracking_note && <div className="mt-1 italic">{r.tracking_note}</div>}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {r.outlet && (
-                          <Link href={`/admin/outlets/${r.outlet.outlet_code}`}>
-                            <Button size="sm" variant="outline">View outlet →</Button>
-                          </Link>
-                        )}
-                        {canAdvance && (
-                          <Button size="sm" onClick={() => advance(r.id)}>
-                            {r.status === "submitted" && <><Check size={12} /> Confirm order</>}
-                            {r.status === "confirmed" && <><Truck size={12} /> Mark shipped</>}
-                            {r.status === "shipped" && <><PackageCheck size={12} /> Mark delivered</>}
-                          </Button>
-                        )}
-                        {r.status === "submitted" && (
-                          <Button size="sm" variant="outline" onClick={() => cancel(r.id)}>
-                            <XIcon size={12} /> Cancel
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </Card>
-            );
-          })}
+  return (
+    <article
+      className={"rounded-[12px] border bg-white p-3 transition-shadow hover:shadow-sm " + col.ring + " border-t-[3px] border-[color:var(--color-border)]"}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="text-[12px] font-semibold text-[color:var(--color-ink)] truncate">
+            {orderNo}
+          </div>
+          <div className="mt-0.5 text-[11px] text-[color:var(--color-ink-soft)]">
+            {r.outlet?.outlet_code ?? "—"} · {r.franchisee?.owner_name ?? "—"}
+          </div>
+        </div>
+        <div className="flex items-center gap-1 text-[11px] text-[color:var(--color-ink-soft)]">
+          <Box size={12} /> {new Date(r.submitted_at).toLocaleDateString("en-MY", { day: "numeric", month: "short" })}
+        </div>
+      </div>
+
+      <div className="mt-2">
+        <div className="text-[11px] font-semibold text-[color:var(--color-ink-soft)]">{itemCount} item(s)</div>
+        <div className="mt-0.5 text-[11px] text-[color:var(--color-ink-soft)] line-clamp-2">{itemsPreview}</div>
+      </div>
+
+      <div className="mt-2 text-[15px] font-bold">RM {r.total.toLocaleString()}</div>
+
+      {r.delivered_at && (
+        <div className="mt-1 text-[11px] text-[color:var(--color-success)]">Delivered {formatDate(r.delivered_at)}</div>
+      )}
+
+      {/* Actions */}
+      <div className="mt-2.5 flex flex-wrap gap-1.5">
+        {canAdvance && (
+          <Button size="sm" onClick={() => onAdvance(r.id)}>
+            {r.status === "submitted" && <><Check size={12} /> Confirm</>}
+            {r.status === "confirmed" && <><Truck size={12} /> Ship</>}
+            {r.status === "shipped" && <><PackageCheck size={12} /> Delivered</>}
+          </Button>
+        )}
+        {r.status === "submitted" && (
+          <Button size="sm" variant="outline" onClick={() => onCancel(r.id)}>
+            <XIcon size={12} /> Cancel
+          </Button>
+        )}
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="ml-auto text-[11px] font-medium text-[color:var(--color-brand-700)] hover:underline"
+        >
+          {open ? "Hide" : "Details"}
+        </button>
+      </div>
+
+      {open && (
+        <div className="mt-3 rounded-[10px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-soft)]/40 p-2.5">
+          <div className="space-y-1 text-[11px]">
+            {r.items.map((it) => (
+              <div key={it.sku} className="flex items-center justify-between gap-2">
+                <span className="truncate"><b>{it.qty}×</b> {it.name} <span className="text-[color:var(--color-ink-soft)]">({it.unit})</span></span>
+                <span className="shrink-0 text-[color:var(--color-ink-soft)]">RM {(it.qty * it.unit_price).toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+          {r.tracking_note && (
+            <div className="mt-2 text-[11px] italic text-[color:var(--color-ink-soft)]">{r.tracking_note}</div>
+          )}
+          {r.outlet && (
+            <Link href={`/admin/outlets/${r.outlet.outlet_code}`} className="mt-2 inline-block text-[11px] font-medium text-[color:var(--color-brand-700)] hover:underline">
+              View outlet →
+            </Link>
+          )}
         </div>
       )}
-    </div>
+    </article>
   );
 }
 
@@ -325,49 +340,5 @@ function Kpi({
       <div className={"mt-2 text-[22px] font-semibold " + cls}>{value}</div>
       <div className="mt-1 text-[12px] text-[color:var(--color-ink-soft)]">{sub}</div>
     </Card>
-  );
-}
-
-function StatusPill({ status }: { status: Status }) {
-  const tone: "brand" | "warning" | "success" | "neutral" | "danger" =
-    status === "delivered" ? "success"
-    : status === "shipped" ? "brand"
-    : status === "confirmed" ? "brand"
-    : status === "cancelled" ? "danger"
-    : "warning";
-  const label = status.charAt(0).toUpperCase() + status.slice(1);
-  return <Pill tone={tone}>{label}</Pill>;
-}
-
-function FulfilmentTracker({ status }: { status: Status }) {
-  if (status === "cancelled") return <span className="text-[color:var(--color-danger)]">Order cancelled.</span>;
-  const steps: { key: Status; label: string }[] = [
-    { key: "submitted", label: "Submitted" },
-    { key: "confirmed", label: "Confirmed" },
-    { key: "shipped", label: "Shipped" },
-    { key: "delivered", label: "Delivered" },
-  ];
-  const currentIdx = steps.findIndex((s) => s.key === status);
-  return (
-    <div className="inline-flex flex-wrap items-center gap-1">
-      {steps.map((s, i) => (
-        <span key={s.key} className="inline-flex items-center gap-1">
-          <span
-            className={
-              "inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold " +
-              (i <= currentIdx
-                ? "bg-[color:var(--color-brand)] text-white"
-                : "bg-[color:var(--color-border)] text-[color:var(--color-ink-soft)]")
-            }
-          >
-            {i < currentIdx ? <Check size={10} /> : i + 1}
-          </span>
-          <span className={i <= currentIdx ? "font-medium text-[color:var(--color-ink)]" : "text-[color:var(--color-ink-soft)]"}>
-            {s.label}
-          </span>
-          {i < steps.length - 1 && <span className="mx-1 text-[color:var(--color-ink-soft)]">›</span>}
-        </span>
-      ))}
-    </div>
   );
 }
