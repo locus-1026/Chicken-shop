@@ -197,21 +197,39 @@ export default function SupportPage() {
 
       <Card>
         <CardTitle>Issue history</CardTitle>
-        <CardSubtitle>Tap a row to read the full conversation with HQ.</CardSubtitle>
+        <CardSubtitle>Tap a row to read the full conversation with HQ. A NEW pill marks threads where HQ has replied since you last looked.</CardSubtitle>
         <ul className="mt-3 divide-y divide-[color:var(--color-border)]">
           {sortedTickets.map((t) => {
-            const msgCount = messages.filter((m) => m.ticket_id === t.id).length;
-            const lastMsg = messages
-              .filter((m) => m.ticket_id === t.id)
-              .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
+            const msgs = messages.filter((m) => m.ticket_id === t.id);
+            const msgCount = msgs.length;
+            const lastMsg = [...msgs].sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
+            // Latest HQ reply — the thing the franchisee actually wants to see.
+            const latestHq = [...msgs].filter((m) => m.author === "hq").sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
+            const seenRaw = typeof window !== "undefined"
+              ? window.localStorage.getItem("cc.portal.ticket-seen." + t.id) : null;
+            const seen = seenRaw ?? "1970-01-01";
+            const isNew = !!latestHq && latestHq.created_at > seen;
             return (
               <li key={t.id}>
                 <button
-                  onClick={() => setOpenTicketId(t.id)}
-                  className="flex w-full items-start justify-between gap-3 py-3 text-left transition-colors hover:bg-[color:var(--color-brand-50)]/40"
+                  onClick={() => {
+                    if (typeof window !== "undefined") {
+                      window.localStorage.setItem("cc.portal.ticket-seen." + t.id, new Date().toISOString());
+                    }
+                    setOpenTicketId(t.id);
+                  }}
+                  className={
+                    "flex w-full items-start justify-between gap-3 py-3 text-left transition-colors hover:bg-[color:var(--color-brand-50)]/40 " +
+                    (isNew ? "bg-[color:var(--color-brand-50)]/40 -mx-3 px-3 rounded-xl" : "")
+                  }
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
+                      {isNew && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-[color:var(--color-danger)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                          <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" /> New
+                        </span>
+                      )}
                       <span className="font-semibold">{t.subject}</span>
                       <Pill tone="neutral">{t.category}</Pill>
                     </div>

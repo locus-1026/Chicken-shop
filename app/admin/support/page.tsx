@@ -328,17 +328,37 @@ export default function AdminSupportPage() {
           <ul className="divide-y divide-[color:var(--color-border)]">
             {filtered.map((t) => {
               const msgs = messages.filter((m) => m.ticket_id === t.id);
-              const lastMsg = msgs.sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
+              const lastMsg = [...msgs].sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
+              // Latest FRANCHISEE message — the thing HQ needs to react to.
+              const latestFr = [...msgs].filter((m) => m.author === "franchisee").sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
+              const seenRaw = typeof window !== "undefined"
+                ? window.localStorage.getItem("cc.admin.ticket-seen." + t.id) : null;
+              const seen = seenRaw ?? "1970-01-01";
+              const latestFrTs = latestFr?.created_at ?? t.created_at;
+              const isNew = latestFrTs > seen && t.status !== "resolved";
               const o = outletFor(t.outlet_id);
               const f = franchiseeFor(t.outlet_id);
               return (
                 <li key={t.id}>
                   <button
-                    onClick={() => setOpenId(t.id)}
-                    className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-[color:var(--color-brand-50)]/40"
+                    onClick={() => {
+                      if (typeof window !== "undefined") {
+                        window.localStorage.setItem("cc.admin.ticket-seen." + t.id, new Date().toISOString());
+                      }
+                      setOpenId(t.id);
+                    }}
+                    className={
+                      "flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-[color:var(--color-brand-50)]/40 " +
+                      (isNew ? "bg-[color:var(--color-brand-50)]/40" : "")
+                    }
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
+                        {isNew && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-[color:var(--color-danger)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                            <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" /> New
+                          </span>
+                        )}
                         <span className="font-semibold">{t.subject}</span>
                         <Pill tone="neutral">{t.category}</Pill>
                         {o && <span className="text-[12px] text-[color:var(--color-brand-700)] font-medium">{o.outlet_code}</span>}
