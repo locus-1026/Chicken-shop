@@ -59,6 +59,8 @@ function AdminShell({ children }: { children: React.ReactNode }) {
   const [pendingSales, setPendingSales] = useState(0);        // sales reports submitted today
   const [pendingSupplies, setPendingSupplies] = useState(0);  // orders in "submitted" status
   const [pendingRoyalties, setPendingRoyalties] = useState(0); // proofs awaiting verification
+  const [openTickets, setOpenTickets] = useState(0);           // open+in_progress tickets
+  const [atRiskAudits, setAtRiskAudits] = useState(0);         // risk-flagged audits
 
   useEffect(() => {
     if (profile?.role !== "admin") return;
@@ -66,7 +68,13 @@ function AdminShell({ children }: { children: React.ReactNode }) {
 
     const recompute = async () => {
       const today = new Date().toISOString().slice(0, 10);
-      const [{ count: salesCount }, { count: supplyCount }, { data: proofRows }] = await Promise.all([
+      const [
+        { count: salesCount },
+        { count: supplyCount },
+        { data: proofRows },
+        { count: ticketCount },
+        { data: auditRows },
+      ] = await Promise.all([
         supabase
           .from("sales_reports")
           .select("id", { count: "exact", head: true })
@@ -78,6 +86,13 @@ function AdminShell({ children }: { children: React.ReactNode }) {
         supabase
           .from("royalty_proofs")
           .select("id, verified_at, rejected_at"),
+        supabase
+          .from("support_tickets")
+          .select("id", { count: "exact", head: true })
+          .in("status", ["open", "in_progress"]),
+        supabase
+          .from("compliance_audits")
+          .select("risk_flag"),
       ]);
       setPendingSales(salesCount ?? 0);
       setPendingSupplies(supplyCount ?? 0);
@@ -85,6 +100,8 @@ function AdminShell({ children }: { children: React.ReactNode }) {
         (p: { verified_at: string | null; rejected_at: string | null }) => !p.verified_at && !p.rejected_at
       ).length;
       setPendingRoyalties(pending);
+      setOpenTickets(ticketCount ?? 0);
+      setAtRiskAudits(((auditRows ?? []) as { risk_flag: boolean }[]).filter((a) => a.risk_flag).length);
     };
 
     recompute();
@@ -95,6 +112,8 @@ function AdminShell({ children }: { children: React.ReactNode }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "sales_reports" }, recompute)
       .on("postgres_changes", { event: "*", schema: "public", table: "supply_orders" }, recompute)
       .on("postgres_changes", { event: "*", schema: "public", table: "royalty_proofs" }, recompute)
+      .on("postgres_changes", { event: "*", schema: "public", table: "support_tickets" }, recompute)
+      .on("postgres_changes", { event: "*", schema: "public", table: "compliance_audits" }, recompute)
       .subscribe();
 
     // Fallback poll in case Realtime isn't enabled on a table yet.
@@ -112,12 +131,16 @@ function AdminShell({ children }: { children: React.ReactNode }) {
       { href: "/admin/franchisees",   label: "Franchisees",  icon: <Users size={18} /> },
       { href: "/admin/royalties",     label: "Royalties",    icon: <Receipt size={18} />, badge: pendingRoyalties },
       { href: "/admin/supplies",      label: "Supplies",     icon: <Package size={18} />, badge: pendingSupplies },
-      { href: "/admin/audits",        label: "Audits",       icon: <ShieldCheck size={18} /> },
+      { href: "/admin/audits",        label: "Audits",       icon: <ShieldCheck size={18} />, badge: atRiskAudits },
       { href: "/admin/training",      label: "Training",     icon: <GraduationCap size={18} /> },
       { href: "/admin/announcements", label: "Announcements", icon: <Megaphone size={18} /> },
     ],
-    [pendingSales, pendingSupplies, pendingRoyalties]
+    [pendingSales, pendingSupplies, pendingRoyalties, atRiskAudits]
   );
+
+  // Silence unused-variable lint for openTickets — it's captured for future
+  // use (a dedicated /admin/support page isn't built yet, so no nav entry).
+  void openTickets;
 
   // Silence unused-variable lint for `pathname` — it's here so future badge
   // logic can distinguish between "you're currently on this tab" vs not.
