@@ -29,6 +29,7 @@ export function Shell({
   headerRight?: ReactNode;
 }) {
   const pathname = usePathname();
+  const isHome = pathname === "/portal" || pathname === "/admin/dashboard";
 
   return (
     <div className="flex min-h-screen bg-[color:var(--color-background)]">
@@ -118,14 +119,19 @@ export function Shell({
           transition={{ duration: 0.24, ease: [0.2, 0.8, 0.2, 1] }}
           className="flex-1 px-5 pb-24 pt-5 lg:px-10 lg:pb-10 lg:pt-8"
         >
-          {/* Universal back button — lives above every page's content. */}
-          <div className="mb-4">
-            <BackButton label="Back" fallbackHref={pathname?.startsWith("/admin") ? "/admin/dashboard" : "/portal"} size="sm" />
-          </div>
+          {/* Back button is hidden on the portal/admin home pages — nothing
+              meaningful to go back to from the root. */}
+          {!isHome && (
+            <div className="mb-4">
+              <BackButton label="Back" fallbackHref={pathname?.startsWith("/admin") ? "/admin/dashboard" : "/portal"} size="sm" />
+            </div>
+          )}
           {children}
-          <div className="mt-8 flex justify-center">
-            <BackButton label="Back to previous page" fallbackHref={pathname?.startsWith("/admin") ? "/admin/dashboard" : "/portal"} />
-          </div>
+          {!isHome && (
+            <div className="mt-8 flex justify-center">
+              <BackButton label="Back to previous page" fallbackHref={pathname?.startsWith("/admin") ? "/admin/dashboard" : "/portal"} />
+            </div>
+          )}
         </motion.main>
       </div>
     </div>
