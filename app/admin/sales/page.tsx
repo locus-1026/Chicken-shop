@@ -218,7 +218,8 @@ export default function AdminSalesPage() {
           </Button>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {perOutlet.map((p) => {
+          {/* Pending outlets first so HQ immediately sees who hasn't reported. */}
+          {[...perOutlet].sort((a, b) => Number(!!a.todays) - Number(!!b.todays)).map((p) => {
             const isIn = !!p.todays;
             return (
               <Link key={p.outlet.id} href={`/admin/outlets/${p.outlet.outlet_code}`} className="block">
@@ -227,11 +228,16 @@ export default function AdminSalesPage() {
                     "rounded-[16px] border p-4 transition-all hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-14px_rgba(45,26,14,0.25)] " +
                     (isIn
                       ? "border-[color:var(--color-success)] bg-[color:var(--color-success-soft)]"
-                      : "border-[color:var(--color-warning)] bg-[color:var(--color-warning-soft)]")
+                      : "border-2 border-[color:var(--color-danger)] bg-[color:var(--color-danger-soft)]/40")
                   }
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
+                      {!isIn && (
+                        <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-[color:var(--color-danger)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                          <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" /> Needs action
+                        </span>
+                      )}
                       <div className="font-semibold">{p.outlet.outlet_code}</div>
                       <div className="truncate text-[12px] text-[color:var(--color-ink-soft)]">{p.outlet.location}</div>
                       <div className="truncate text-[11px] text-[color:var(--color-ink-soft)]">Owner {p.franchisee?.owner_name ?? "—"}</div>

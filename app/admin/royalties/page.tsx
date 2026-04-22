@@ -102,14 +102,28 @@ export default function AdminRoyaltiesPage() {
 
   const filtered = useMemo(
     () => {
-      // Sort by outlet_code (CC-001, CC-002, ...) so the table reads naturally.
+      // Priority: rows with awaiting-verification proofs first (HQ must act),
+      // then overdue, then pending, then paid. Within each, alphabetical
+      // outlet_code so the list still reads naturally.
       const codeById: Record<string, string> = {};
       for (const o of outlets) codeById[o.id] = o.outlet_code;
+      const priorityOf = (r: Royalty): number => {
+        const proof = proofs[r.id];
+        const awaiting = r.status !== "paid" && proof && !proof.rejected_at && !proof.verified_at;
+        if (awaiting) return 0;
+        if (r.status === "overdue") return 1;
+        if (r.status === "pending") return 2;
+        return 3; // paid
+      };
       return rows
         .filter((r) => r.period === period)
-        .sort((a, b) => (codeById[a.outlet_id] ?? "").localeCompare(codeById[b.outlet_id] ?? ""));
+        .sort((a, b) => {
+          const pd = priorityOf(a) - priorityOf(b);
+          if (pd !== 0) return pd;
+          return (codeById[a.outlet_id] ?? "").localeCompare(codeById[b.outlet_id] ?? "");
+        });
     },
-    [rows, period, outlets]
+    [rows, period, outlets, proofs]
   );
 
   const editGross = async (id: string, g: number) => {
@@ -293,10 +307,18 @@ export default function AdminRoyaltiesPage() {
                 : r.status === "overdue" ? "overdue"
                 : "pending";
 
+              const needsAction = !!activeProof && !activeProof.verified_at;
               return (
-                <tr key={r.id} className="border-t border-[color:var(--color-border)] align-top">
+                <tr key={r.id} className={"border-t align-top " + (needsAction ? "border-[color:var(--color-danger)] bg-[color:var(--color-danger-soft)]/30" : "border-[color:var(--color-border)]")}>
                   <td className="px-4 py-3">
-                    <div className="font-medium">{outlet.outlet_code}</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {needsAction && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-[color:var(--color-danger)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                          <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" /> Needs action
+                        </span>
+                      )}
+                      <span className="font-medium">{outlet.outlet_code}</span>
+                    </div>
                     <div className="text-[11px] text-[color:var(--color-ink-soft)]">{outlet.location}</div>
                   </td>
                   <td className="px-4 py-3">
