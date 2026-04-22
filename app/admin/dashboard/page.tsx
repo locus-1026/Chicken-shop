@@ -151,7 +151,7 @@ export default function AdminDashboard() {
 
   // Per-outlet × per-month grid so HQ can see exactly which outlet
   // paid and which didn't for each of the last 3 months.
-  const collectionGrid = outlets.map((o) => {
+  const collectionGrid = mockOutlets.map((o) => {
     const row: {
       outlet: typeof o;
       cells: { period: string; status: "paid" | "unpaid" | "none"; amount: number }[];
