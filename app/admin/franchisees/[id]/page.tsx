@@ -463,7 +463,7 @@ export default function FranchiseeDetailPage() {
           ownerName={franchisee.owner_name}
           kind={action}
           onClose={() => setAction(null)}
-          onConfirm={async (summary) => {
+          onConfirm={async ({ summary, body }) => {
             const supabase = createSupabaseBrowserClient();
             // Mock franchisee.id ("f-1") won't match; resolve to the real uuid
             // by business_name (seed data keeps both in sync).
@@ -481,7 +481,7 @@ export default function FranchiseeDetailPage() {
               title: action === "coach"
                 ? "HQ · Coaching call scheduled"
                 : "HQ · Warning notice issued",
-              body: summary,
+              body,
               link: "/portal",
             });
             if (error) {

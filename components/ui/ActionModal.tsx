@@ -18,7 +18,10 @@ export function ActionModal({
   ownerName: string;
   kind: ActionKind;
   onClose: () => void;
-  onConfirm: (summary: string) => void;
+  // Body is what the franchisee sees in their notification card.
+  // Summary is the short toast HQ sees on their own screen.
+  // When is the ISO datetime for coaching (empty for notices).
+  onConfirm: (payload: { summary: string; body: string; when: string }) => void;
 }) {
   const isCoach = kind === "coach";
   const [when, setWhen] = useState(() => {
@@ -92,13 +95,18 @@ export function ActionModal({
         <div className="flex justify-end gap-2 border-t border-[color:var(--color-border)] bg-[color:var(--color-background)] p-4">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
-            onClick={() =>
-              onConfirm(
-                isCoach
-                  ? `Coaching call scheduled with ${ownerName} (${subjectCode}) — invite sent.`
-                  : `Warning notice issued to ${subjectCode}. Franchisee and the agreement file have been notified.`
-              )
-            }
+            onClick={() => {
+              const whenNice = isCoach
+                ? new Date(when).toLocaleString("en-MY", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true })
+                : "";
+              const body = isCoach
+                ? `HQ would like to coach ${subjectCode} on ${whenNice}.\n\n${note}`
+                : note;
+              const summary = isCoach
+                ? `Coaching call proposed for ${whenNice} with ${ownerName} (${subjectCode}).`
+                : `Warning notice issued to ${subjectCode}. Franchisee and the agreement file have been notified.`;
+              onConfirm({ summary, body, when: isCoach ? new Date(when).toISOString() : "" });
+            }}
           >
             {isCoach ? (<><PhoneCall size={14} /> Send invite</>) : (<><FileWarning size={14} /> Issue notice</>)}
           </Button>

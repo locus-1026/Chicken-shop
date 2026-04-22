@@ -313,7 +313,7 @@ export default function AdminDashboard() {
           ownerName={actionTarget.ownerName}
           kind={actionTarget.kind}
           onClose={() => setActionTarget(null)}
-          onConfirm={async (summary) => {
+          onConfirm={async ({ summary, body }) => {
             const supabase = createSupabaseBrowserClient();
             // Map the mock franchisee to a real Supabase franchisee by
             // business_name (seed data aligns the two on the same business_name).
@@ -328,7 +328,7 @@ export default function AdminDashboard() {
               title: target.kind === "coach"
                 ? "HQ · Coaching call scheduled"
                 : "HQ · Warning notice issued",
-              body: summary,
+              body,
               link: "/portal",
             });
             if (error) {

@@ -396,7 +396,7 @@ export default function OutletDetailPage() {
           ownerName={franchisee.owner_name}
           kind={action}
           onClose={() => setAction(null)}
-          onConfirm={(summary) => {
+          onConfirm={({ summary }) => {
             setAction(null);
             toast("success", summary);
           }}
