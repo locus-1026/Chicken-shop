@@ -12,7 +12,7 @@ import { mockAudits, mockFranchisees, mockOutlets } from "@/lib/mock-data";
 import type { Royalty } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { RM, monthLabel, daysUntil } from "@/lib/utils";
-import { Trophy, AlertTriangle, PhoneCall, FileWarning } from "lucide-react";
+import { Trophy, AlertTriangle, PhoneCall, FileWarning, Check } from "lucide-react";
 import { ActionModal, type ActionKind } from "@/components/ui/ActionModal";
 import { notifyFranchisee } from "@/lib/notify";
 import type { Franchisee } from "@/lib/types";
@@ -30,7 +30,7 @@ export default function AdminDashboard() {
   // Remember which franchisees HQ has already coached/noticed (localStorage so
   // it persists across sessions). Shown as a small pill on the "Needs attention"
   // row so HQ knows not to double-action.
-  const [actioned, setActioned] = useState<Record<string, { coach?: string; notice?: string }>>({});
+  const [actioned, setActioned] = useState<Record<string, { coach?: string; notice?: string; solved?: string }>>({});
 
   useEffect(() => {
     // Restore actioned watermarks from localStorage.
@@ -98,7 +98,17 @@ export default function AdminDashboard() {
   });
 
   const top = [...outletsWithStatus].sort((a, b) => b.pct - a.pct).slice(0, 3);
-  const bottom = [...outletsWithStatus].sort((a, b) => a.pct - b.pct).slice(0, 3);
+  // Outlets the admin has marked "solved" this month drop out of Needs
+  // attention until the 1st of next month, when the list resets.
+  const thisMonthKey = new Date().toISOString().slice(0, 7); // "2026-04"
+  const bottom = [...outletsWithStatus]
+    .filter((x) => {
+      const real = realFranchisees.find((f) => f.business_name === x.franchisee.business_name);
+      const solved = real ? actioned[real.id]?.solved : undefined;
+      return !(solved && solved.slice(0, 7) === thisMonthKey);
+    })
+    .sort((a, b) => a.pct - b.pct)
+    .slice(0, 3);
 
   // Last 3 distinct billing periods from the real royalties table.
   const recentPeriods = [...new Set(royalties.map((r) => r.period))].slice(0, 3);
@@ -230,6 +240,25 @@ export default function AdminDashboard() {
                       onClick={() => setActionTarget({ outletCode: x.outlet.outlet_code, ownerName: x.franchisee.owner_name, kind: "notice", businessName: x.franchisee.business_name })}
                     >
                       <FileWarning size={12} /> Issue warning notice
+                    </Button>
+                  )}
+                  {real && (
+                    <Button
+                      size="sm"
+                      variant="success"
+                      onClick={() => {
+                        const next = {
+                          ...actioned,
+                          [real.id]: { ...actioned[real.id], solved: new Date().toISOString() },
+                        };
+                        setActioned(next);
+                        if (typeof window !== "undefined") {
+                          window.localStorage.setItem("cc.admin.actioned", JSON.stringify(next));
+                        }
+                        toast("success", `${x.outlet.outlet_code} marked solved for this month.`);
+                      }}
+                    >
+                      <Check size={12} /> Mark solved
                     </Button>
                   )}
                 </div>
