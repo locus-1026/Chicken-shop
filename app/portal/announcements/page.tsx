@@ -234,6 +234,16 @@ function NotificationCard({ n }: { n: Notification }) {
     setProposing(false);
   };
 
+  // Lets the franchisee undo a response they didn't mean to submit (or a
+  // stale/seed status). Brings the action buttons back.
+  const resetResponse = async () => {
+    setBusy(true);
+    await supabase.from("notifications")
+      .update({ status: null, response_note: null, responded_at: null })
+      .eq("id", n.id);
+    setBusy(false);
+  };
+
   const hasResponded = !!n.responded_at;
   const statusLabel =
     n.status === "accepted" ? "You accepted"
@@ -269,8 +279,15 @@ function NotificationCard({ n }: { n: Notification }) {
 
           {/* Response UI */}
           {hasResponded ? (
-            <div className="mt-3 rounded-lg bg-white/60 px-3 py-2 text-[12px]">
-              <b>Your response:</b> {statusLabel} · {n.responded_at ? formatDate(n.responded_at) : ""}
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/60 px-3 py-2 text-[12px]">
+              <span><b>Your response:</b> {statusLabel} · {n.responded_at ? formatDate(n.responded_at) : ""}</span>
+              <button
+                onClick={resetResponse}
+                disabled={busy}
+                className="rounded-full border border-[color:var(--color-border)] bg-white px-2 py-0.5 text-[11px] font-medium text-[color:var(--color-ink-soft)] hover:border-[color:var(--color-danger)] hover:text-[color:var(--color-danger)] disabled:opacity-50"
+              >
+                Change response
+              </button>
             </div>
           ) : (
             <div className="mt-3">
