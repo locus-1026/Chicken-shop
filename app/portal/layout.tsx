@@ -20,6 +20,7 @@ import {
   Wallet,
   LogOut,
   Store,
+  Bell,
 } from "lucide-react";
 
 function Gate({ children }: { children: React.ReactNode }) {
@@ -55,6 +56,40 @@ function PortalShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const toast = useToast();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
+
+  // Direct-push notifications from HQ. Realtime row-insert → toast on screen.
+  // Count unread for a header bell badge.
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  useEffect(() => {
+    if (!profile?.id) return;
+    const refresh = async () => {
+      const { count } = await supabase
+        .from("notifications")
+        .select("id", { count: "exact", head: true })
+        .eq("recipient_id", profile.id)
+        .is("read_at", null);
+      setUnreadNotifications(count ?? 0);
+    };
+    refresh();
+    const channel = supabase
+      .channel("portal-notifications-" + profile.id)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "notifications", filter: `recipient_id=eq.${profile.id}` },
+        (payload) => {
+          const n = payload.new as { title: string; body: string };
+          toast("info", `${n.title} — ${n.body}`);
+          setUnreadNotifications((c) => c + 1);
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "notifications", filter: `recipient_id=eq.${profile.id}` },
+        refresh
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [supabase, profile?.id, toast]);
 
   // Sidebar notifications for the franchisee:
   //  • Royalty badge  — proofs rejected by HQ or statements overdue & unpaid
@@ -218,6 +253,26 @@ function PortalShell({ children }: { children: React.ReactNode }) {
       subtitle={`${outlet.outlet_code} · ${outlet.location}`}
       headerRight={
         <div className="flex items-center gap-2">
+          <button
+            onClick={async () => {
+              if (!profile?.id) return;
+              // Mark everything read on click.
+              await supabase.from("notifications").update({ read_at: new Date().toISOString() })
+                .eq("recipient_id", profile.id).is("read_at", null);
+              setUnreadNotifications(0);
+              toast("info", "All notifications marked read.");
+            }}
+            className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--color-border)] bg-white text-[color:var(--color-ink-soft)] hover:border-[color:var(--color-brand)] hover:text-[color:var(--color-brand-700)]"
+            aria-label="Notifications"
+            title={unreadNotifications > 0 ? `${unreadNotifications} unread HQ notifications` : "No unread notifications"}
+          >
+            <Bell size={16} />
+            {unreadNotifications > 0 && (
+              <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[color:var(--color-danger)] px-1 text-[10px] font-bold text-white">
+                {unreadNotifications > 9 ? "9+" : unreadNotifications}
+              </span>
+            )}
+          </button>
           {outlets.length > 1 ? (
             <select
               value={outlet.id}

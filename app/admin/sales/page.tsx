@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import type { SalesReport, Outlet, Franchisee } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { notifyFranchisee } from "@/lib/notify";
 import { RM, formatDate } from "@/lib/utils";
 import {
   TrendingUp,
@@ -158,12 +159,22 @@ export default function AdminSalesPage() {
     toast("success", `Exported ${recentRows.length} rows to CSV.`);
   };
 
-  const nudgeMissing = () => {
+  const nudgeMissing = async () => {
     if (missing.length === 0) {
       toast("info", "Everyone's already submitted today — no reminders needed.");
       return;
     }
-    toast("success", `Reminder WhatsApp sent to ${missing.length} outlet${missing.length > 1 ? "s" : ""}.`);
+    const supabase = createSupabaseBrowserClient();
+    for (const m of missing) {
+      if (!m.outlet.franchisee_id) continue;
+      await notifyFranchisee(supabase, m.outlet.franchisee_id, {
+        kind: "nudge_sales",
+        title: "HQ reminder · Submit today's sales",
+        body: `Please submit today's daily sales for ${m.outlet.outlet_code}. Due before close.`,
+        link: "/portal/sales",
+      });
+    }
+    toast("success", `Reminder sent to ${missing.length} outlet${missing.length > 1 ? "s" : ""}.`);
   };
 
   return (

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import type { TrainingModule, TrainingProgress, Outlet, Franchisee, Profile } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { notifyFranchisee, notifyAllFranchisees } from "@/lib/notify";
 import { UploadCloud, Check, Clock, X as XIcon, Bell, Mail } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
 
@@ -114,17 +115,38 @@ export default function AdminTrainingPage() {
     toast("success", `Uploaded "${name}" as a new draft module.`);
   };
 
-  const nudgeOutlet = (outletCode: string, missingCount: number) => {
+  const nudgeOutlet = async (outletCode: string, missingCount: number, franchiseeId: string | undefined) => {
+    if (!franchiseeId) return;
+    await notifyFranchisee(supabase, franchiseeId, {
+      kind: "nudge_training",
+      title: "HQ reminder · Training outstanding",
+      body: `${outletCode} has ${missingCount} training module${missingCount > 1 ? "s" : ""} still to complete. Please finish this week.`,
+      link: "/portal/training",
+    });
     toast("success", `Nudge sent to ${outletCode} for ${missingCount} outstanding module${missingCount > 1 ? "s" : ""}.`);
   };
 
-  const nudgeAllIncomplete = () => {
-    const count = outletCompletion.filter((o) => o.pct < 100).length;
-    if (count === 0) {
+  const nudgeAllIncomplete = async () => {
+    const incomplete = outletCompletion.filter((o) => o.pct < 100 && o.franchisee?.id);
+    if (incomplete.length === 0) {
       toast("info", "Everyone's caught up.");
       return;
     }
-    toast("success", `Reminder sent to ${count} outlet${count > 1 ? "s" : ""} with outstanding modules.`);
+    // Dedup by franchisee id (several outlets per franchisee).
+    const seen = new Set<string>();
+    for (const row of incomplete) {
+      const fid = row.franchisee?.id;
+      if (!fid || seen.has(fid)) continue;
+      seen.add(fid);
+      await notifyFranchisee(supabase, fid, {
+        kind: "nudge_training",
+        title: "HQ reminder · Training outstanding",
+        body: `Your team still has training modules to finish. Please complete them this week.`,
+        link: "/portal/training",
+      });
+    }
+    toast("success", `Reminder sent to ${seen.size} franchisee${seen.size > 1 ? "s" : ""} with outstanding modules.`);
+    void notifyAllFranchisees; // kept for future bulk broadcast
   };
 
   return (
@@ -259,7 +281,7 @@ export default function AdminTrainingPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => nudgeOutlet(row.outlet.outlet_code, missing)}
+                        onClick={() => nudgeOutlet(row.outlet.outlet_code, missing, row.franchisee?.id)}
                       >
                         <Mail size={12} /> Nudge {missing}
                       </Button>

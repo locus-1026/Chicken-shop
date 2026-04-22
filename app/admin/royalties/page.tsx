@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { RM, RM2, formatDate, monthLabel } from "@/lib/utils";
 import { calcRoyalty } from "@/lib/utils";
-import { notifyRoyaltyDue } from "@/lib/mocks/notifications";
+import { notifyFranchisee } from "@/lib/notify";
 import { useToast } from "@/components/ui/Toast";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Royalty, Outlet, Franchisee } from "@/lib/types";
@@ -193,9 +193,14 @@ export default function AdminRoyaltiesPage() {
     }
     for (const r of outstanding) {
       const outlet = outlets.find((o) => o.id === r.outlet_id);
-      if (!outlet) continue;
-      const f = franchisees.find((x) => x.id === outlet.franchisee_id);
-      await notifyRoyaltyDue(outlet.outlet_code, f?.email ?? "unknown@coco.my", r.royalty_amount + r.marketing_fee);
+      if (!outlet?.franchisee_id) continue;
+      const total = r.royalty_amount + r.marketing_fee;
+      await notifyFranchisee(supabase, outlet.franchisee_id, {
+        kind: "nudge_royalty",
+        title: "HQ reminder · Royalty outstanding",
+        body: `${outlet.outlet_code} · ${monthLabel(r.period)} — RM ${total.toLocaleString()} still pending. Due ${r.due_date}.`,
+        link: "/portal/royalty",
+      });
     }
     toast("success", `Sent ${outstanding.length} royalty reminders.`);
   };

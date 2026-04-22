@@ -19,6 +19,7 @@ import {
 } from "@/lib/mock-data";
 import type { Royalty } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { notifyFranchisee } from "@/lib/notify";
 import { RM, RM2, formatDate, monthLabel, daysUntil } from "@/lib/utils";
 import {
   Phone,
@@ -462,7 +463,16 @@ export default function FranchiseeDetailPage() {
           ownerName={franchisee.owner_name}
           kind={action}
           onClose={() => setAction(null)}
-          onConfirm={(summary) => {
+          onConfirm={async (summary) => {
+            const supabase = createSupabaseBrowserClient();
+            await notifyFranchisee(supabase, franchisee.id, {
+              kind: action === "coach" ? "coaching_call" : "warning_notice",
+              title: action === "coach"
+                ? "HQ · Coaching call scheduled"
+                : "HQ · Warning notice issued",
+              body: summary,
+              link: "/portal",
+            });
             setAction(null);
             toast("success", summary);
           }}

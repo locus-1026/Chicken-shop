@@ -14,10 +14,11 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { RM, monthLabel, daysUntil } from "@/lib/utils";
 import { Trophy, AlertTriangle, PhoneCall, FileWarning } from "lucide-react";
 import { ActionModal, type ActionKind } from "@/components/ui/ActionModal";
+import { notifyFranchisee } from "@/lib/notify";
 
 export default function AdminDashboard() {
   const toast = useToast();
-  const [actionTarget, setActionTarget] = useState<{ outletCode: string; ownerName: string; kind: ActionKind } | null>(null);
+  const [actionTarget, setActionTarget] = useState<{ outletCode: string; ownerName: string; kind: ActionKind; franchiseeId: string } | null>(null);
   // Real royalties + verified-proof map, so dashboard numbers agree with
   // /admin/royalties and the franchisee portal.
   const [royalties, setRoyalties] = useState<Royalty[]>([]);
@@ -188,7 +189,7 @@ export default function AdminDashboard() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => setActionTarget({ outletCode: x.outlet.outlet_code, ownerName: x.franchisee.owner_name, kind: "coach" })}
+                    onClick={() => setActionTarget({ outletCode: x.outlet.outlet_code, ownerName: x.franchisee.owner_name, kind: "coach", franchiseeId: x.franchisee.id })}
                   >
                     <PhoneCall size={12} /> Schedule coaching call
                   </Button>
@@ -196,7 +197,7 @@ export default function AdminDashboard() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => setActionTarget({ outletCode: x.outlet.outlet_code, ownerName: x.franchisee.owner_name, kind: "notice" })}
+                      onClick={() => setActionTarget({ outletCode: x.outlet.outlet_code, ownerName: x.franchisee.owner_name, kind: "notice", franchiseeId: x.franchisee.id })}
                     >
                       <FileWarning size={12} /> Issue warning notice
                     </Button>
@@ -214,7 +215,16 @@ export default function AdminDashboard() {
           ownerName={actionTarget.ownerName}
           kind={actionTarget.kind}
           onClose={() => setActionTarget(null)}
-          onConfirm={(summary) => {
+          onConfirm={async (summary) => {
+            const supabase = createSupabaseBrowserClient();
+            await notifyFranchisee(supabase, actionTarget.franchiseeId, {
+              kind: actionTarget.kind === "coach" ? "coaching_call" : "warning_notice",
+              title: actionTarget.kind === "coach"
+                ? "HQ · Coaching call scheduled"
+                : "HQ · Warning notice issued",
+              body: summary,
+              link: "/portal",
+            });
             setActionTarget(null);
             toast("success", summary);
           }}
