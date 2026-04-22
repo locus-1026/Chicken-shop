@@ -72,6 +72,12 @@ export default function AdminSuppliesPage() {
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
+    // Priority ordering: submitted (needs HQ to confirm) first, then confirmed
+    // (needs shipping), then shipped, then delivered/cancelled. Within each
+    // bucket, newest first.
+    const priority: Record<Status, number> = {
+      submitted: 0, confirmed: 1, shipped: 2, delivered: 3, cancelled: 4,
+    };
     return orders
       .map((o) => {
         const outlet = outlets.find((x) => x.id === o.outlet_id);
@@ -87,7 +93,12 @@ export default function AdminSuppliesPage() {
             r.items.some((it) => it.name.toLowerCase().includes(q))
           : true
       )
-      .sort((a, b) => (a.submitted_at < b.submitted_at ? 1 : -1));
+      .sort((a, b) => {
+        const ap = priority[a.status] ?? 99;
+        const bp = priority[b.status] ?? 99;
+        if (ap !== bp) return ap - bp;
+        return a.submitted_at < b.submitted_at ? 1 : -1;
+      });
   }, [orders, outlets, franchisees, filter, query]);
 
   const counts = useMemo(() => {
@@ -193,8 +204,11 @@ export default function AdminSuppliesPage() {
             const isOpen = expanded === r.id;
             const itemCount = r.items.reduce((s, it) => s + it.qty, 0);
             const canAdvance = r.status !== "delivered" && r.status !== "cancelled";
+            // Submitted orders are what HQ *must* touch next — visually
+            // distinguish them so they don't get lost in a long list.
+            const needsAction = r.status === "submitted";
             return (
-              <Card key={r.id} className="!p-0 overflow-hidden">
+              <Card key={r.id} className={"!p-0 overflow-hidden " + (needsAction ? "!border-[color:var(--color-danger)] !border-2 bg-[color:var(--color-danger-soft)]/30" : "")}>
                 <button
                   onClick={() => setExpanded(isOpen ? null : r.id)}
                   className="flex w-full items-center gap-4 px-4 py-3 text-left hover:bg-[color:var(--color-brand-50)]/40"
@@ -202,6 +216,11 @@ export default function AdminSuppliesPage() {
                   {isOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
+                      {needsAction && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-[color:var(--color-danger)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                          <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" /> Needs action
+                        </span>
+                      )}
                       <span className="font-semibold">{r.outlet?.outlet_code ?? "—"}</span>
                       <span className="text-[13px] text-[color:var(--color-ink-soft)]">·</span>
                       <span className="truncate text-[13px]">{r.outlet?.location ?? ""}</span>
