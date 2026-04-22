@@ -150,7 +150,7 @@ function PortalShell({ children }: { children: React.ReactNode }) {
       { href: "/portal/training",      label: "Training",   icon: <GraduationCap size={18} /> },
       { href: "/portal/compliance",    label: "Audits",     icon: <ShieldCheck size={18} /> },
       { href: "/portal/marketing",     label: "Marketing",  icon: <ImageIcon size={18} /> },
-      { href: "/portal/support",       label: "Support",    icon: <LifeBuoy size={18} />, badge: supportAlert },
+      { href: "/portal/support",       label: "Help",       icon: <LifeBuoy size={18} />, badge: supportAlert },
       { href: "/portal/announcements", label: "News",       icon: <Megaphone size={18} />, badge: newsAlert },
     ],
     [royaltyAlert, supplyAlert, supportAlert, newsAlert]

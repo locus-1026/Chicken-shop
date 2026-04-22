@@ -147,7 +147,7 @@ export default function AdminSupportPage() {
           onClick={() => { setOpenId(null); setReply(""); }}
           className="inline-flex items-center gap-1.5 text-sm text-[color:var(--color-ink-soft)] hover:text-[color:var(--color-ink)]"
         >
-          <ArrowLeft size={14} /> Back to all requests
+          <ArrowLeft size={14} /> Back to all issues
         </button>
 
         <Card>
@@ -192,6 +192,27 @@ export default function AdminSupportPage() {
 
         <Card className="!p-0">
           <ul className="divide-y divide-[color:var(--color-border)]">
+            {/* Always show the original description as the first message. If a
+                franchisee's submit flow already inserted a matching
+                ticket_messages row we skip it to avoid duplication. */}
+            {openTicket.description && !thread.some((m) => m.author === "franchisee" && m.body === openTicket.description) && (
+              <li className="p-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[color:var(--color-border)] text-[color:var(--color-ink-soft)]">
+                    <User size={14} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                      <span className="font-semibold">{f?.owner_name ?? "Franchisee"}</span>
+                      <span className="inline-flex items-center gap-1 text-[11px] text-[color:var(--color-ink-soft)]">
+                        <Clock size={10} /> {formatDate(openTicket.created_at)}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed">{openTicket.description}</div>
+                  </div>
+                </div>
+              </li>
+            )}
             {thread.map((m) => {
               const isHq = m.author === "hq";
               return (
@@ -256,7 +277,7 @@ export default function AdminSupportPage() {
       <Card>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <CardTitle>Franchisee requests</CardTitle>
+            <CardTitle>Franchisee issues</CardTitle>
             <CardSubtitle>Sorted by newest. Click one to read the thread and reply.</CardSubtitle>
           </div>
           <div className="relative">

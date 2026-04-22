@@ -133,7 +133,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
       { href: "/admin/royalties",     label: "Royalties",    icon: <Receipt size={18} />, badge: pendingRoyalties },
       { href: "/admin/supplies",      label: "Supplies",     icon: <Package size={18} />, badge: pendingSupplies },
       { href: "/admin/audits",        label: "Audits",       icon: <ShieldCheck size={18} />, badge: atRiskAudits },
-      { href: "/admin/support",       label: "Support",      icon: <LifeBuoy size={18} />, badge: openTickets },
+      { href: "/admin/support",       label: "Help",         icon: <LifeBuoy size={18} />, badge: openTickets },
       { href: "/admin/training",      label: "Training",     icon: <GraduationCap size={18} /> },
       { href: "/admin/announcements", label: "Announcements", icon: <Megaphone size={18} /> },
     ],
