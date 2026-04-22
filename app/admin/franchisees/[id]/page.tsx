@@ -13,11 +13,12 @@ import {
   mockAudits,
   mockFranchisees,
   mockOutlets,
-  mockRoyalties,
   mockSalesReports,
   mockTickets,
   mockSupplyOrders,
 } from "@/lib/mock-data";
+import type { Royalty } from "@/lib/types";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { RM, RM2, formatDate, monthLabel, daysUntil } from "@/lib/utils";
 import {
   Phone,
@@ -46,12 +47,46 @@ export default function FranchiseeDetailPage() {
   const [action, setAction] = useState<ActionKind | null>(null);
   const [renewOpen, setRenewOpen] = useState(false);
   const [renewal, setRenewal] = useState<Renewal | null>(null);
+  // Real royalty rows + proofs loaded from Supabase so this page agrees with
+  // /admin/royalties and the franchisee's own portal view.
+  const [royalties, setRoyalties] = useState<Royalty[]>([]);
+  const [verifiedByRoyalty, setVerifiedByRoyalty] = useState<Record<string, boolean>>({});
   const franchisee = mockFranchisees.find((f) => f.id === params.id);
 
   useEffect(() => {
     if (!franchisee || typeof window === "undefined") return;
     const raw = window.localStorage.getItem(RENEWAL_KEY(franchisee.id));
     setRenewal(raw ? (JSON.parse(raw) as Renewal) : null);
+  }, [franchisee]);
+
+  // Fetch live royalties for this franchisee's outlets.
+  useEffect(() => {
+    if (!franchisee) return;
+    const supabase = createSupabaseBrowserClient();
+    const outletIds = mockOutlets
+      .filter((o) => o.franchisee_id === franchisee.id)
+      .map((o) => o.id);
+    if (outletIds.length === 0) return;
+    (async () => {
+      const { data: roys } = await supabase
+        .from("royalties")
+        .select("id, outlet_id, gross_sales, royalty_amount, marketing_fee, due_date, paid_at, status, period:billing_period")
+        .in("outlet_id", outletIds)
+        .order("billing_period", { ascending: false });
+      const rs = (roys ?? []) as Royalty[];
+      setRoyalties(rs);
+      if (rs.length > 0) {
+        const { data: proofRows } = await supabase
+          .from("royalty_proofs")
+          .select("royalty_id, verified_at")
+          .in("royalty_id", rs.map((r) => r.id));
+        const v: Record<string, boolean> = {};
+        for (const p of (proofRows ?? []) as { royalty_id: string; verified_at: string | null }[]) {
+          if (p.verified_at) v[p.royalty_id] = true;
+        }
+        setVerifiedByRoyalty(v);
+      }
+    })();
   }, [franchisee]);
 
   if (!franchisee) return notFound();
@@ -74,7 +109,7 @@ export default function FranchiseeDetailPage() {
     const monthlyTarget = outlets.reduce((s, o) => s + o.monthly_target, 0);
     const audits = mockAudits.filter((a) => outletIds.includes(a.outlet_id));
     const avgAudit = audits.length ? audits.reduce((s, a) => s + a.score, 0) / audits.length : null;
-    const royalties = mockRoyalties.filter((r) => outletIds.includes(r.outlet_id));
+    // Use the live royalties fetched above (already filtered to this franchisee's outlets).
     const outstanding = royalties
       .filter((r) => r.status !== "paid")
       .reduce((s, r) => s + r.royalty_amount + r.marketing_fee, 0);
@@ -88,7 +123,7 @@ export default function FranchiseeDetailPage() {
       avgAudit, audits, royalties, outstanding, overdueCount,
       tickets, openTickets, orders, openOrders,
     };
-  }, [outlets, outletIds]);
+  }, [outlets, outletIds, royalties]);
 
   // Rolled-up 30-day sales trend across all outlets owned by this franchisee.
   const trend = useMemo(() => {
@@ -213,8 +248,8 @@ export default function FranchiseeDetailPage() {
             const latestAudit = mockAudits
               .filter((a) => a.outlet_id === o.id)
               .sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1))[0];
-            const latestRoyalty = mockRoyalties
-              .filter((r) => r.outlet_id === o.id && r.status !== "paid")
+            const latestRoyalty = royalties
+              .filter((r) => r.outlet_id === o.id && r.status !== "paid" && !verifiedByRoyalty[r.id])
               .sort((a, b) => (a.due_date < b.due_date ? -1 : 1))[0];
             const overdue = latestRoyalty && daysUntil(latestRoyalty.due_date) < 0;
             const outletTone =
@@ -279,7 +314,10 @@ export default function FranchiseeDetailPage() {
               .sort((a, b) => (a.period < b.period ? 1 : -1))
               .slice(0, 3)
               .map((r) => {
-                const st = r.status === "paid" ? "paid" : daysUntil(r.due_date) < 0 ? "overdue" : r.status;
+                // Treat a verified-proof row as paid even if the royalties row
+                // hasn't been flipped yet (race between two admin writes).
+                const effectiveStatus = r.status === "paid" || verifiedByRoyalty[r.id] ? "paid" : r.status;
+                const st = effectiveStatus === "paid" ? "paid" : daysUntil(r.due_date) < 0 ? "overdue" : effectiveStatus;
                 const outlet = outlets.find((o) => o.id === r.outlet_id);
                 return (
                   <li key={r.id} className="flex items-center justify-between rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2.5">
