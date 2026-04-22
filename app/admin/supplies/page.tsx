@@ -238,12 +238,11 @@ function OrderCard({
   onAdvance: (id: string) => void;
   onCancel: (id: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const itemCount = r.items.reduce((s, it) => s + it.qty, 0);
   const canAdvance = r.status !== "delivered" && r.status !== "cancelled";
 
   return (
-    <article className={"rounded-[12px] border border-[color:var(--color-border)] bg-white p-3 transition-shadow hover:shadow-sm"}>
+    <article className="rounded-[12px] border border-[color:var(--color-border)] bg-white p-3 transition-shadow hover:shadow-sm">
       {/* Header: outlet + date */}
       <div className="flex items-center justify-between gap-2">
         <div className="truncate text-[13px] font-semibold text-[color:var(--color-ink)]">
@@ -257,7 +256,7 @@ function OrderCard({
         {r.franchisee?.owner_name ?? "—"}
       </div>
 
-      {/* Amount + item count on one row */}
+      {/* Amount + item count */}
       <div className="mt-2 flex items-baseline justify-between gap-2">
         <div className="text-[16px] font-bold">RM {r.total.toLocaleString()}</div>
         <div className="text-[11px] text-[color:var(--color-ink-soft)]">{itemCount} item{itemCount === 1 ? "" : "s"}</div>
@@ -267,50 +266,45 @@ function OrderCard({
         <div className="mt-1 text-[11px] text-[color:var(--color-success)]">Delivered {formatDate(r.delivered_at)}</div>
       )}
 
-      {/* Actions — compact row */}
-      {(canAdvance || r.status === "submitted" || r.items.length > 0) && (
-        <div className="mt-2.5 flex items-center gap-1.5 border-t border-[color:var(--color-border)] pt-2.5">
-          {canAdvance && (
-            <Button size="sm" onClick={() => onAdvance(r.id)}>
-              {r.status === "submitted" && <><Check size={12} /> Confirm</>}
-              {r.status === "confirmed" && <><Truck size={12} /> Ship</>}
-              {r.status === "shipped" && <><PackageCheck size={12} /> Delivered</>}
-            </Button>
-          )}
-          {r.status === "submitted" && (
-            <Button size="sm" variant="outline" onClick={() => onCancel(r.id)}>
-              <XIcon size={12} />
-            </Button>
-          )}
-          <button
-            onClick={() => setOpen((v) => !v)}
-            className="ml-auto text-[11px] font-medium text-[color:var(--color-brand-700)] hover:underline"
-          >
-            {open ? "Hide" : "Details"}
-          </button>
-        </div>
+      {/* Line items — always visible */}
+      {r.items.length > 0 && (
+        <ul className="mt-2 space-y-0.5 border-t border-[color:var(--color-border)] pt-2 text-[11px]">
+          {r.items.map((it) => (
+            <li key={it.sku} className="flex items-center justify-between gap-2">
+              <span className="truncate"><b>{it.qty}×</b> {it.name}</span>
+              <span className="shrink-0 text-[color:var(--color-ink-soft)]">RM {(it.qty * it.unit_price).toLocaleString()}</span>
+            </li>
+          ))}
+        </ul>
       )}
 
-      {open && (
-        <div className="mt-2.5 rounded-[10px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-soft)]/40 p-2.5">
-          <div className="space-y-1 text-[11px]">
-            {r.items.map((it) => (
-              <div key={it.sku} className="flex items-center justify-between gap-2">
-                <span className="truncate"><b>{it.qty}×</b> {it.name}</span>
-                <span className="shrink-0 text-[color:var(--color-ink-soft)]">RM {(it.qty * it.unit_price).toLocaleString()}</span>
-              </div>
-            ))}
-          </div>
-          {r.tracking_note && (
-            <div className="mt-2 text-[11px] italic text-[color:var(--color-ink-soft)]">{r.tracking_note}</div>
-          )}
-          {r.outlet && (
-            <Link href={`/admin/outlets/${r.outlet.outlet_code}`} className="mt-2 inline-block text-[11px] font-medium text-[color:var(--color-brand-700)] hover:underline">
-              View outlet →
-            </Link>
-          )}
-        </div>
+      {r.tracking_note && (
+        <div className="mt-1.5 text-[11px] italic text-[color:var(--color-ink-soft)]">{r.tracking_note}</div>
       )}
+
+      {/* Actions */}
+      <div className="mt-2.5 flex items-center gap-1.5 border-t border-[color:var(--color-border)] pt-2.5">
+        {canAdvance && (
+          <Button size="sm" onClick={() => onAdvance(r.id)}>
+            {r.status === "submitted" && <><Check size={12} /> Confirm</>}
+            {r.status === "confirmed" && <><Truck size={12} /> Ship</>}
+            {r.status === "shipped" && <><PackageCheck size={12} /> Delivered</>}
+          </Button>
+        )}
+        {r.status === "submitted" && (
+          <Button size="sm" variant="outline" onClick={() => onCancel(r.id)}>
+            <XIcon size={12} />
+          </Button>
+        )}
+        {r.outlet && (
+          <Link
+            href={`/admin/outlets/${r.outlet.outlet_code}`}
+            className="ml-auto text-[11px] font-medium text-[color:var(--color-brand-700)] hover:underline"
+          >
+            View outlet →
+          </Link>
+        )}
+      </div>
     </article>
   );
 }
