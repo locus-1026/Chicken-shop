@@ -18,6 +18,7 @@ import {
   TrendingUp,
   LifeBuoy,
   LogOut,
+  Calendar as CalendarIcon,
 } from "lucide-react";
 
 function Gate({ children }: { children: React.ReactNode }) {
@@ -162,6 +163,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
   const nav = useMemo(
     () => [
       { href: "/admin/dashboard",     label: "War Room",     icon: <LayoutDashboard size={18} /> },
+      { href: "/admin/calendar",      label: "Calendar",     icon: <CalendarIcon size={18} /> },
       { href: "/admin/sales",         label: "Daily sales",  icon: <TrendingUp size={18} />, badge: pendingSales },
       { href: "/admin/franchisees",   label: "Franchisees",  icon: <Users size={18} /> },
       { href: "/admin/royalties",     label: "Royalties",    icon: <Receipt size={18} />, badge: pendingRoyalties },
