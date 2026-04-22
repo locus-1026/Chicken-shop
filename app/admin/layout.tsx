@@ -105,8 +105,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
           .select("risk_flag"),
         supabase
           .from("outlets")
-          .select("id, status")
-          .eq("status", "active"),
+          .select("id"),
       ]);
       // Sales badge: number of active outlets that have NOT yet submitted
       // today. Matches the "NEEDS ACTION" cards on /admin/sales.
