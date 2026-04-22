@@ -10,7 +10,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/utils";
 import {
   Package, Check, Truck, PackageCheck, X as XIcon, Search,
-  AlertTriangle, Hourglass, Box, Truck as TruckIcon, CheckCircle2, CornerUpLeft,
+  AlertTriangle, Hourglass, Truck as TruckIcon, CheckCircle2, CornerUpLeft,
 } from "lucide-react";
 
 type Status = SupplyOrder["status"];
@@ -224,7 +224,7 @@ function KanbanColumn({
             <Icon size={14} className="mx-auto mb-1 opacity-40" /> No orders
           </div>
         ) : (
-          items.map((r) => <OrderCard key={r.id} r={r} col={col} onAdvance={onAdvance} onCancel={onCancel} />)
+          items.map((r) => <OrderCard key={r.id} r={r} onAdvance={onAdvance} onCancel={onCancel} />)
         )}
       </div>
     </div>
@@ -232,76 +232,71 @@ function KanbanColumn({
 }
 
 function OrderCard({
-  r, col, onAdvance, onCancel,
+  r, onAdvance, onCancel,
 }: {
   r: Row;
-  col: Column;
   onAdvance: (id: string) => void;
   onCancel: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const itemCount = r.items.reduce((s, it) => s + it.qty, 0);
   const canAdvance = r.status !== "delivered" && r.status !== "cancelled";
-  const orderNo = "ORD-" + r.id.slice(-8).toUpperCase();
-  const itemsPreview = r.items.slice(0, 2).map((it) => `${it.name} ×${it.qty}`).join(", ") + (r.items.length > 2 ? "…" : "");
 
   return (
-    <article
-      className={"rounded-[12px] border bg-white p-3 transition-shadow hover:shadow-sm " + col.ring + " border-t-[3px] border-[color:var(--color-border)]"}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="text-[12px] font-semibold text-[color:var(--color-ink)] truncate">
-            {orderNo}
-          </div>
-          <div className="mt-0.5 text-[11px] text-[color:var(--color-ink-soft)]">
-            {r.outlet?.outlet_code ?? "—"} · {r.franchisee?.owner_name ?? "—"}
-          </div>
+    <article className={"rounded-[12px] border border-[color:var(--color-border)] bg-white p-3 transition-shadow hover:shadow-sm"}>
+      {/* Header: outlet + date */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="truncate text-[13px] font-semibold text-[color:var(--color-ink)]">
+          {r.outlet?.outlet_code ?? "—"}
         </div>
-        <div className="flex items-center gap-1 text-[11px] text-[color:var(--color-ink-soft)]">
-          <Box size={12} /> {new Date(r.submitted_at).toLocaleDateString("en-MY", { day: "numeric", month: "short" })}
+        <div className="shrink-0 text-[11px] text-[color:var(--color-ink-soft)]">
+          {new Date(r.submitted_at).toLocaleDateString("en-MY", { day: "numeric", month: "short" })}
         </div>
       </div>
-
-      <div className="mt-2">
-        <div className="text-[11px] font-semibold text-[color:var(--color-ink-soft)]">{itemCount} item(s)</div>
-        <div className="mt-0.5 text-[11px] text-[color:var(--color-ink-soft)] line-clamp-2">{itemsPreview}</div>
+      <div className="truncate text-[11px] text-[color:var(--color-ink-soft)]">
+        {r.franchisee?.owner_name ?? "—"}
       </div>
 
-      <div className="mt-2 text-[15px] font-bold">RM {r.total.toLocaleString()}</div>
+      {/* Amount + item count on one row */}
+      <div className="mt-2 flex items-baseline justify-between gap-2">
+        <div className="text-[16px] font-bold">RM {r.total.toLocaleString()}</div>
+        <div className="text-[11px] text-[color:var(--color-ink-soft)]">{itemCount} item{itemCount === 1 ? "" : "s"}</div>
+      </div>
 
       {r.delivered_at && (
         <div className="mt-1 text-[11px] text-[color:var(--color-success)]">Delivered {formatDate(r.delivered_at)}</div>
       )}
 
-      {/* Actions */}
-      <div className="mt-2.5 flex flex-wrap gap-1.5">
-        {canAdvance && (
-          <Button size="sm" onClick={() => onAdvance(r.id)}>
-            {r.status === "submitted" && <><Check size={12} /> Confirm</>}
-            {r.status === "confirmed" && <><Truck size={12} /> Ship</>}
-            {r.status === "shipped" && <><PackageCheck size={12} /> Delivered</>}
-          </Button>
-        )}
-        {r.status === "submitted" && (
-          <Button size="sm" variant="outline" onClick={() => onCancel(r.id)}>
-            <XIcon size={12} /> Cancel
-          </Button>
-        )}
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className="ml-auto text-[11px] font-medium text-[color:var(--color-brand-700)] hover:underline"
-        >
-          {open ? "Hide" : "Details"}
-        </button>
-      </div>
+      {/* Actions — compact row */}
+      {(canAdvance || r.status === "submitted" || r.items.length > 0) && (
+        <div className="mt-2.5 flex items-center gap-1.5 border-t border-[color:var(--color-border)] pt-2.5">
+          {canAdvance && (
+            <Button size="sm" onClick={() => onAdvance(r.id)}>
+              {r.status === "submitted" && <><Check size={12} /> Confirm</>}
+              {r.status === "confirmed" && <><Truck size={12} /> Ship</>}
+              {r.status === "shipped" && <><PackageCheck size={12} /> Delivered</>}
+            </Button>
+          )}
+          {r.status === "submitted" && (
+            <Button size="sm" variant="outline" onClick={() => onCancel(r.id)}>
+              <XIcon size={12} />
+            </Button>
+          )}
+          <button
+            onClick={() => setOpen((v) => !v)}
+            className="ml-auto text-[11px] font-medium text-[color:var(--color-brand-700)] hover:underline"
+          >
+            {open ? "Hide" : "Details"}
+          </button>
+        </div>
+      )}
 
       {open && (
-        <div className="mt-3 rounded-[10px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-soft)]/40 p-2.5">
+        <div className="mt-2.5 rounded-[10px] border border-[color:var(--color-border)] bg-[color:var(--color-surface-soft)]/40 p-2.5">
           <div className="space-y-1 text-[11px]">
             {r.items.map((it) => (
               <div key={it.sku} className="flex items-center justify-between gap-2">
-                <span className="truncate"><b>{it.qty}×</b> {it.name} <span className="text-[color:var(--color-ink-soft)]">({it.unit})</span></span>
+                <span className="truncate"><b>{it.qty}×</b> {it.name}</span>
                 <span className="shrink-0 text-[color:var(--color-ink-soft)]">RM {(it.qty * it.unit_price).toLocaleString()}</span>
               </div>
             ))}
