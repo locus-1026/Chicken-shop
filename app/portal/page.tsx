@@ -7,8 +7,8 @@ import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
 import { Stagger, StaggerItem } from "@/components/ui/Stagger";
 import { SalesDonut } from "@/components/charts/SalesDonut";
-import { mockAudits, resolveMockOutletId } from "@/lib/mock-data";
-import type { Royalty } from "@/lib/types";
+import { resolveMockOutletId } from "@/lib/mock-data";
+import type { Royalty, ComplianceAudit } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useCurrentOutlet } from "@/lib/current-outlet";
 import { RM, RM2, daysUntil, formatDate } from "@/lib/utils";
@@ -59,9 +59,28 @@ export default function PortalHome() {
       : latestRoyalty.status
     : "pending";
   const royalty = latestRoyalty;
-  const lastAudit = mockAudits
-    .filter((a) => a.outlet_id === mockOutletId)
-    .sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1))[0];
+  // Live audit lookup for this outlet — reads from Supabase so the card
+  // matches what /portal/compliance and HQ see.
+  const [lastAudit, setLastAudit] = useState<ComplianceAudit | null>(null);
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient();
+    const load = async () => {
+      const { data } = await supabase
+        .from("compliance_audits")
+        .select("*")
+        .eq("outlet_id", outlet.id)
+        .order("audit_date", { ascending: false })
+        .limit(1);
+      setLastAudit(((data ?? []) as ComplianceAudit[])[0] ?? null);
+    };
+    load();
+    const channel = supabase
+      .channel("portal-home-audits-" + outlet.id)
+      .on("postgres_changes", { event: "*", schema: "public", table: "compliance_audits", filter: `outlet_id=eq.${outlet.id}` }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [outlet.id]);
+  void mockOutletId; // still referenced earlier for other mock lookups
 
   // Per-outlet checklist state persisted to localStorage so ticks survive refreshes.
   const [doneMap, setDoneMap] = useState<Record<number, boolean>>({});
