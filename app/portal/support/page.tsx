@@ -91,7 +91,7 @@ export default function SupportPage() {
     });
     await load();
     setForm({ category: categories[0], subject: "", description: "" });
-    toast("success", "Ticket submitted. HQ will respond within one business day.");
+    toast("success", "Request submitted. HQ will respond within one business day.");
     setOpenTicketId(inserted.id);
   };
 
@@ -137,7 +137,7 @@ export default function SupportPage() {
     <div className="space-y-6">
       <div className="grid gap-5 lg:grid-cols-5">
         <Card className="lg:col-span-3">
-          <CardTitle>Open a new ticket</CardTitle>
+          <CardTitle>Open a new request</CardTitle>
           <CardSubtitle>Someone at HQ responds within one business day.</CardSubtitle>
           <div className="mt-4 grid gap-4">
             <label>
@@ -173,7 +173,7 @@ export default function SupportPage() {
               <Paperclip size={16} /> Attach photo (optional)
               <input type="file" className="hidden" />
             </label>
-            <Button onClick={submit} className="self-start">Submit ticket</Button>
+            <Button onClick={submit} className="self-start">Submit request</Button>
           </div>
         </Card>
 
@@ -191,7 +191,7 @@ export default function SupportPage() {
       </div>
 
       <Card>
-        <CardTitle>Ticket history</CardTitle>
+        <CardTitle>Request history</CardTitle>
         <CardSubtitle>Tap a row to read the full conversation with HQ.</CardSubtitle>
         <ul className="mt-3 divide-y divide-[color:var(--color-border)]">
           {sortedTickets.map((t) => {
@@ -248,7 +248,7 @@ function TicketThread({
         onClick={onBack}
         className="inline-flex items-center gap-1.5 text-sm text-[color:var(--color-ink-soft)] hover:text-[color:var(--color-ink)]"
       >
-        <ArrowLeft size={14} /> Back to all tickets
+        <ArrowLeft size={14} /> Back to all requests
       </button>
 
       <Card>
@@ -308,7 +308,7 @@ function TicketThread({
         <CardTitle>Reply</CardTitle>
         <CardSubtitle>
           {ticket.status === "resolved"
-            ? "Sending a reply will reopen this ticket."
+            ? "Sending a reply will reopen this request."
             : "HQ gets notified the moment you send."}
         </CardSubtitle>
         <textarea

@@ -16,6 +16,7 @@ import {
   Megaphone,
   Package,
   TrendingUp,
+  LifeBuoy,
   LogOut,
 } from "lucide-react";
 
@@ -132,15 +133,12 @@ function AdminShell({ children }: { children: React.ReactNode }) {
       { href: "/admin/royalties",     label: "Royalties",    icon: <Receipt size={18} />, badge: pendingRoyalties },
       { href: "/admin/supplies",      label: "Supplies",     icon: <Package size={18} />, badge: pendingSupplies },
       { href: "/admin/audits",        label: "Audits",       icon: <ShieldCheck size={18} />, badge: atRiskAudits },
+      { href: "/admin/support",       label: "Support",      icon: <LifeBuoy size={18} />, badge: openTickets },
       { href: "/admin/training",      label: "Training",     icon: <GraduationCap size={18} /> },
       { href: "/admin/announcements", label: "Announcements", icon: <Megaphone size={18} /> },
     ],
-    [pendingSales, pendingSupplies, pendingRoyalties, atRiskAudits]
+    [pendingSales, pendingSupplies, pendingRoyalties, atRiskAudits, openTickets]
   );
-
-  // Silence unused-variable lint for openTickets — it's captured for future
-  // use (a dedicated /admin/support page isn't built yet, so no nav entry).
-  void openTickets;
 
   // Silence unused-variable lint for `pathname` — it's here so future badge
   // logic can distinguish between "you're currently on this tab" vs not.
