@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Card, CardSubtitle, CardTitle } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
 import { useCurrentOutlet } from "@/lib/current-outlet";
@@ -9,7 +10,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { monthLabel } from "@/lib/utils";
 import {
   PhoneCall, Receipt, Calendar as CalIcon, CheckCircle2, Clock,
-  ChevronLeft, ChevronRight, MapPin,
+  ChevronLeft, ChevronRight, MapPin, AlertTriangle, XCircle, HelpCircle,
 } from "lucide-react";
 
 type CalEvent = {
@@ -260,6 +261,21 @@ function FilterTab({ active, onClick, label, icon }: { active: boolean; onClick:
   );
 }
 
+function StatusPill({ e }: { e: CalEvent }) {
+  // Coaching statuses
+  if (e.kind === "coaching") {
+    if (e.status === "accepted") return <Pill tone="success"><CheckCircle2 size={10} /> Accepted</Pill>;
+    if (e.status === "proposed") return <Pill tone="warning"><Clock size={10} /> Pending HQ</Pill>;
+    if (e.status === "declined" || e.status === "cancelled") return <Pill tone="danger"><XCircle size={10} /> Cancelled</Pill>;
+    if (e.status === "done") return <Pill tone="success"><CheckCircle2 size={10} /> Done</Pill>;
+    // Default — HQ scheduled, franchisee hasn't responded yet
+    return <Pill tone="warning"><HelpCircle size={10} /> Pending your reply</Pill>;
+  }
+  // Royalty statuses
+  if (e.tone === "danger") return <Pill tone="danger"><AlertTriangle size={10} /> Overdue</Pill>;
+  return <Pill tone="warning"><Clock size={10} /> Due</Pill>;
+}
+
 function EventCard({ e }: { e: CalEvent }) {
   const when = new Date(e.at);
   const isRoyalty = e.kind === "royalty_due";
@@ -277,43 +293,49 @@ function EventCard({ e }: { e: CalEvent }) {
     : e.tone === "danger" ? "border-l-[color:var(--color-danger)]"
     : "border-l-[color:var(--color-brand)]";
 
+  // Coaching → News tab (where franchisee can accept/propose/etc).
+  // Royalty → Royalty tab (where franchisee uploads proof / sees amount).
+  const href = e.kind === "coaching" ? "/portal/announcements" : "/portal/royalty";
+
   return (
-    <article className={"rounded-[14px] border border-[color:var(--color-border)] border-l-4 bg-white p-4 " + borderTone}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 text-[13px] font-medium text-[color:var(--color-ink)]">
-            <Clock size={13} className="text-[color:var(--color-ink-soft)]" />
-            {isRoyalty
-              ? <span>All day</span>
-              : <span><span className="font-semibold">{timeStart}</span> – {timeEnd}</span>}
-            <span className="text-[color:var(--color-ink-soft)]">· {duration}</span>
-          </div>
-          <h4 className="mt-2 text-[15px] font-semibold">{e.title}</h4>
-          <p className="mt-0.5 text-[13px] text-[color:var(--color-ink-soft)]">{e.body}</p>
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-[color:var(--color-ink-soft)]">
-            {e.kind === "coaching" && (
-              <>
-                <span className="inline-flex items-center gap-1"><PhoneCall size={12} /> HQ coach</span>
-                <span className="inline-flex items-center gap-1"><MapPin size={12} /> Phone call</span>
-              </>
-            )}
-            {e.kind === "royalty_due" && (
-              <span className="inline-flex items-center gap-1"><Receipt size={12} /> Pay to HQ</span>
-            )}
-          </div>
-          {e.proposedTime && (
-            <div className="mt-2 rounded-md bg-[color:var(--color-warning-soft)] px-2 py-1 text-[11px] text-[color:var(--color-warning)]">
-              You proposed: {e.proposedTime}
+    <Link href={href} className="block">
+      <article className={"rounded-[14px] border border-[color:var(--color-border)] border-l-4 bg-white p-4 transition-all hover:-translate-y-0.5 hover:shadow-sm " + borderTone}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 text-[13px] font-medium text-[color:var(--color-ink)]">
+              <Clock size={13} className="text-[color:var(--color-ink-soft)]" />
+              {isRoyalty
+                ? <span>All day</span>
+                : <span><span className="font-semibold">{timeStart}</span> – {timeEnd}</span>}
+              <span className="text-[color:var(--color-ink-soft)]">· {duration}</span>
             </div>
-          )}
+            <h4 className="mt-2 text-[15px] font-semibold">{e.title}</h4>
+            <p className="mt-0.5 text-[13px] text-[color:var(--color-ink-soft)]">{e.body}</p>
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-[color:var(--color-ink-soft)]">
+              {e.kind === "coaching" && (
+                <>
+                  <span className="inline-flex items-center gap-1"><PhoneCall size={12} /> HQ coach</span>
+                  <span className="inline-flex items-center gap-1"><MapPin size={12} /> Phone call</span>
+                </>
+              )}
+              {e.kind === "royalty_due" && (
+                <span className="inline-flex items-center gap-1"><Receipt size={12} /> Pay to HQ</span>
+              )}
+              <span className="ml-auto text-[11px] text-[color:var(--color-brand-700)]">
+                {e.kind === "coaching" ? "Open in News →" : "Open royalty →"}
+              </span>
+            </div>
+            {e.proposedTime && (
+              <div className="mt-2 rounded-md bg-[color:var(--color-warning-soft)] px-2 py-1 text-[11px] text-[color:var(--color-warning)]">
+                You proposed: {e.proposedTime}
+              </div>
+            )}
+          </div>
+          <div className="shrink-0">
+            <StatusPill e={e} />
+          </div>
         </div>
-        <div className="shrink-0">
-          {e.status === "accepted" && <Pill tone="success"><CheckCircle2 size={10} /> Accepted</Pill>}
-          {e.status === "proposed" && <Pill tone="warning"><Clock size={10} /> Proposed</Pill>}
-          {!e.status && e.kind === "royalty_due" && <Pill tone="warning">Due</Pill>}
-          {!e.status && e.kind === "coaching" && <Pill tone="brand">Scheduled</Pill>}
-        </div>
-      </div>
-    </article>
+      </article>
+    </Link>
   );
 }

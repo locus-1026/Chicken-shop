@@ -9,8 +9,20 @@ import type { Outlet, Franchisee } from "@/lib/types";
 import { monthLabel, daysUntil } from "@/lib/utils";
 import {
   PhoneCall, Receipt, Calendar as CalIcon, CheckCircle2, Clock, AlertTriangle,
-  ChevronLeft, ChevronRight, User,
+  ChevronLeft, ChevronRight, User, XCircle, HelpCircle,
 } from "lucide-react";
+
+function StatusPill({ e }: { e: CalEvent }) {
+  if (e.kind === "coaching") {
+    if (e.status === "accepted") return <Pill tone="success"><CheckCircle2 size={10} /> Accepted</Pill>;
+    if (e.status === "proposed") return <Pill tone="warning"><Clock size={10} /> Reschedule proposed</Pill>;
+    if (e.status === "declined" || e.status === "cancelled") return <Pill tone="danger"><XCircle size={10} /> Cancelled</Pill>;
+    if (e.status === "done") return <Pill tone="success"><CheckCircle2 size={10} /> Done</Pill>;
+    return <Pill tone="warning"><HelpCircle size={10} /> Awaiting reply</Pill>;
+  }
+  if (e.tone === "danger") return <Pill tone="danger"><AlertTriangle size={10} /> Overdue</Pill>;
+  return <Pill tone="warning"><Clock size={10} /> Due</Pill>;
+}
 
 type CalEvent = {
   id: string;
@@ -332,11 +344,7 @@ function EventCard({ e }: { e: CalEvent }) {
           )}
         </div>
         <div className="shrink-0">
-          {e.status === "accepted" && <Pill tone="success"><CheckCircle2 size={10} /> Accepted</Pill>}
-          {e.status === "proposed" && <Pill tone="warning"><Clock size={10} /> Proposed</Pill>}
-          {e.tone === "danger" && e.kind === "royalty_due" && <Pill tone="danger"><AlertTriangle size={10} /> Overdue</Pill>}
-          {!e.status && e.kind === "royalty_due" && e.tone !== "danger" && <Pill tone="warning">Due</Pill>}
-          {!e.status && e.kind === "coaching" && <Pill tone="brand">Scheduled</Pill>}
+          <StatusPill e={e} />
         </div>
       </div>
     </article>
