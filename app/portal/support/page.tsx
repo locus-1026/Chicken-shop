@@ -47,6 +47,11 @@ export default function SupportPage() {
 
   useEffect(() => {
     load();
+    // Mark support as seen so the sidebar Help badge clears.
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("cc.portal.support.lastSeen." + outlet.id, new Date().toISOString());
+      window.dispatchEvent(new Event("cc.support-seen"));
+    }
     const channel = supabase
       .channel("portal-support-" + outlet.id)
       .on("postgres_changes", { event: "*", schema: "public", table: "support_tickets", filter: `outlet_id=eq.${outlet.id}` }, load)

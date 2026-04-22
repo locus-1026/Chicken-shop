@@ -60,6 +60,11 @@ export default function AdminSalesPage() {
       setFranchisees((franchiseeData ?? []) as Franchisee[]);
     };
     load();
+    // Mark sales as seen so sidebar badge clears.
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("cc.admin.sales.lastSeen", new Date().toISOString());
+      window.dispatchEvent(new Event("cc.admin.sales-seen"));
+    }
     const channel = supabase
       .channel("admin-sales")
       .on("postgres_changes", { event: "*", schema: "public", table: "sales_reports" }, load)

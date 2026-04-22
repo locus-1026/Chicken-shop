@@ -69,16 +69,23 @@ function AdminShell({ children }: { children: React.ReactNode }) {
 
     const recompute = async () => {
       const today = new Date().toISOString().slice(0, 10);
+      const salesSeenRaw = typeof window !== "undefined"
+        ? window.localStorage.getItem("cc.admin.sales.lastSeen") : null;
+      const salesSeen = salesSeenRaw ?? "1970-01-01";
+      const supportSeenRaw = typeof window !== "undefined"
+        ? window.localStorage.getItem("cc.admin.support.lastSeen") : null;
+      const supportSeen = supportSeenRaw ?? "1970-01-01";
+
       const [
-        { count: salesCount },
+        { data: salesRows },
         { count: supplyCount },
         { data: proofRows },
-        { count: ticketCount },
+        { data: ticketRows },
         { data: auditRows },
       ] = await Promise.all([
         supabase
           .from("sales_reports")
-          .select("id", { count: "exact", head: true })
+          .select("report_date, id, outlet_id")
           .eq("report_date", today),
         supabase
           .from("supply_orders")
@@ -86,22 +93,41 @@ function AdminShell({ children }: { children: React.ReactNode }) {
           .eq("status", "submitted"),
         supabase
           .from("royalty_proofs")
-          .select("id, verified_at, rejected_at"),
+          .select("id, verified_at, rejected_at, submitted_at"),
         supabase
           .from("support_tickets")
-          .select("id", { count: "exact", head: true })
+          .select("id, status, created_at")
           .in("status", ["open", "in_progress"]),
         supabase
           .from("compliance_audits")
           .select("risk_flag"),
       ]);
-      setPendingSales(salesCount ?? 0);
+      // Sales badge: today's reports submitted after admin last opened /admin/sales.
+      const salesNew = ((salesRows ?? []) as { id: string; report_date: string }[])
+        .filter((r) => r.report_date > salesSeen).length;
+      setPendingSales(salesNew);
       setPendingSupplies(supplyCount ?? 0);
       const pending = (proofRows ?? []).filter(
         (p: { verified_at: string | null; rejected_at: string | null }) => !p.verified_at && !p.rejected_at
       ).length;
       setPendingRoyalties(pending);
-      setOpenTickets(ticketCount ?? 0);
+      // Help badge: open/in_progress tickets with activity after admin last visit.
+      const openIds = ((ticketRows ?? []) as { id: string; created_at: string }[]);
+      let helpCount = 0;
+      if (openIds.length > 0) {
+        const { data: fMsgs } = await supabase
+          .from("ticket_messages")
+          .select("ticket_id, created_at")
+          .in("ticket_id", openIds.map((t) => t.id))
+          .eq("author", "franchisee")
+          .order("created_at", { ascending: false });
+        const latestByTicket: Record<string, string> = {};
+        for (const m of (fMsgs ?? []) as { ticket_id: string; created_at: string }[]) {
+          if (!latestByTicket[m.ticket_id]) latestByTicket[m.ticket_id] = m.created_at;
+        }
+        helpCount = openIds.filter((t) => (latestByTicket[t.id] ?? t.created_at) > supportSeen).length;
+      }
+      setOpenTickets(helpCount);
       setAtRiskAudits(((auditRows ?? []) as { risk_flag: boolean }[]).filter((a) => a.risk_flag).length);
     };
 
@@ -114,13 +140,21 @@ function AdminShell({ children }: { children: React.ReactNode }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "supply_orders" }, recompute)
       .on("postgres_changes", { event: "*", schema: "public", table: "royalty_proofs" }, recompute)
       .on("postgres_changes", { event: "*", schema: "public", table: "support_tickets" }, recompute)
+      .on("postgres_changes", { event: "*", schema: "public", table: "ticket_messages" }, recompute)
       .on("postgres_changes", { event: "*", schema: "public", table: "compliance_audits" }, recompute)
       .subscribe();
+
+    // Watermark clear events — fire when admin opens the corresponding page.
+    const onSeen = () => recompute();
+    window.addEventListener("cc.admin.sales-seen", onSeen);
+    window.addEventListener("cc.admin.support-seen", onSeen);
 
     // Fallback poll in case Realtime isn't enabled on a table yet.
     const id = setInterval(recompute, 30000);
     return () => {
       supabase.removeChannel(channel);
+      window.removeEventListener("cc.admin.sales-seen", onSeen);
+      window.removeEventListener("cc.admin.support-seen", onSeen);
       clearInterval(id);
     };
   }, [profile?.role]);

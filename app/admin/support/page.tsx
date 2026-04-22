@@ -54,6 +54,11 @@ export default function AdminSupportPage() {
 
   useEffect(() => {
     load();
+    // Mark help-inbox as seen so the sidebar badge clears.
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("cc.admin.support.lastSeen", new Date().toISOString());
+      window.dispatchEvent(new Event("cc.admin.support-seen"));
+    }
     const channel = supabase
       .channel("admin-support")
       .on("postgres_changes", { event: "*", schema: "public", table: "support_tickets" }, load)

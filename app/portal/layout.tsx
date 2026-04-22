@@ -126,11 +126,35 @@ function PortalShell({ children }: { children: React.ReactNode }) {
       });
     setSupplyAlert(newish.length);
 
-    // Support alert: tickets in_progress that the franchisee hasn't "seen" since
-    // an HQ reply. Simpler heuristic: count tickets where status = 'in_progress'
-    // or latest message is from HQ. For now, count in_progress tickets.
-    const inProgress = ((tickets ?? []) as { status: string }[]).filter((t) => t.status === "in_progress").length;
-    setSupportAlert(inProgress);
+    // Support alert: count in_progress tickets where the LATEST HQ reply (or
+    // the ticket itself) happened after the franchisee last opened /portal/support.
+    // Visiting the page bumps the watermark forward, so the badge clears.
+    const supportSeenRaw = typeof window !== "undefined"
+      ? window.localStorage.getItem("cc.portal.support.lastSeen." + outlet.id)
+      : null;
+    const supportSeen = supportSeenRaw ?? "1970-01-01";
+    const ticketRows = (tickets ?? []) as { id: string; status: string; created_at: string }[];
+    const inProgressTickets = ticketRows.filter((t) => t.status === "in_progress");
+    let supportCount = 0;
+    if (inProgressTickets.length > 0) {
+      // Pull latest HQ message per ticket so the badge only lights on actual
+      // activity the franchisee hasn't seen.
+      const { data: hqMessages } = await supabase
+        .from("ticket_messages")
+        .select("ticket_id, created_at")
+        .in("ticket_id", inProgressTickets.map((t) => t.id))
+        .eq("author", "hq")
+        .order("created_at", { ascending: false });
+      const latestByTicket: Record<string, string> = {};
+      for (const m of (hqMessages ?? []) as { ticket_id: string; created_at: string }[]) {
+        if (!latestByTicket[m.ticket_id]) latestByTicket[m.ticket_id] = m.created_at;
+      }
+      supportCount = inProgressTickets.filter((t) => {
+        const latest = latestByTicket[t.id] ?? t.created_at;
+        return latest > supportSeen;
+      }).length;
+    }
+    setSupportAlert(supportCount);
 
     // News alert: announcements not yet read.
     const readIds = new Set(((reads ?? []) as { announcement_id: string }[]).map((r) => r.announcement_id));
@@ -150,13 +174,15 @@ function PortalShell({ children }: { children: React.ReactNode }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "announcements" }, recompute)
       .on("postgres_changes", { event: "*", schema: "public", table: "announcement_reads" }, recompute)
       .subscribe();
-    // Also listen for the "supplies page visited" custom event so the badge
-    // clears the instant the franchisee opens the page.
-    const onSuppliesSeen = () => recompute();
-    window.addEventListener("cc.supplies-seen", onSuppliesSeen);
+    // Also listen for "page visited" custom events so badges clear the instant
+    // the franchisee opens the relevant page.
+    const onSeen = () => recompute();
+    window.addEventListener("cc.supplies-seen", onSeen);
+    window.addEventListener("cc.support-seen", onSeen);
     return () => {
       supabase.removeChannel(channel);
-      window.removeEventListener("cc.supplies-seen", onSuppliesSeen);
+      window.removeEventListener("cc.supplies-seen", onSeen);
+      window.removeEventListener("cc.support-seen", onSeen);
     };
   }, [recompute, supabase, profile?.id]);
 
