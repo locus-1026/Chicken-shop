@@ -377,11 +377,13 @@ function CenteredSkeleton() {
   // franchisee their account is loading, not broken.
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[color:var(--color-background)] px-6 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[color:var(--color-brand)] text-2xl font-bold text-white shadow-[0_10px_28px_-12px_rgba(45,26,14,0.30)] animate-pulse">
-        C
-      </div>
+      <img
+        src="/brand/logo.png"
+        alt="JI FAN WANG"
+        className="h-20 w-20 object-contain animate-pulse"
+      />
       <div>
-        <div className="text-[15px] font-semibold text-[color:var(--color-ink)]">Coco Chick</div>
+        <div className="text-[16px] font-semibold tracking-tight text-[color:var(--color-ink)]">JI FAN WANG · 鸡饭王</div>
         <div className="text-[12px] text-[color:var(--color-ink-soft)]">Getting your outlet ready…</div>
       </div>
       <div className="skeleton mt-2 h-1.5 w-40 rounded-full" />

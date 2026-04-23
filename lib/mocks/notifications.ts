@@ -13,7 +13,7 @@ export async function sendWhatsApp(opts: { to: string; message: string }) {
 export async function notifyRoyaltyDue(outletCode: string, email: string, amount: number) {
   await sendEmail({
     to: email,
-    subject: `[Coco Chick] Royalty statement ready for ${outletCode}`,
+    subject: `[JI FAN WANG] Royalty statement ready for ${outletCode}`,
     body: `Your royalty + marketing fee of RM ${amount.toLocaleString()} is ready. Please settle by the 14th.`,
   });
 }
@@ -21,7 +21,7 @@ export async function notifyRoyaltyDue(outletCode: string, email: string, amount
 export async function notifyContractExpiry(email: string, outletCode: string, daysLeft: number) {
   await sendEmail({
     to: email,
-    subject: `[Coco Chick] Contract renewal reminder — ${daysLeft} days left`,
+    subject: `[JI FAN WANG] Contract renewal reminder — ${daysLeft} days left`,
     body: `Your agreement for ${outletCode} expires in ${daysLeft} days. Please get in touch with HQ.`,
   });
 }

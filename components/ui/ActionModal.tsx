@@ -13,7 +13,7 @@ export function ActionModal({
   onClose,
   onConfirm,
 }: {
-  // e.g. "CC-001" or "Coco Chick PJ Sdn Bhd"
+  // e.g. "CC-001" or "鸡饭王 PJ Sdn Bhd"
   subjectCode: string;
   ownerName: string;
   kind: ActionKind;

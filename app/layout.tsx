@@ -4,8 +4,12 @@ import { ToastProvider } from "@/components/ui/Toast";
 import { AuthProvider } from "@/lib/auth";
 
 export const metadata: Metadata = {
-  title: "Coco Chick Franchise Portal",
+  title: "JI FAN WANG · 鸡饭王 Franchise Portal",
   description: "Sales, royalties, training, and compliance — all in one place.",
+  icons: {
+    icon: "/brand/logo.png",
+    apple: "/brand/logo.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

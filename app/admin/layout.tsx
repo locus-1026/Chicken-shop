@@ -287,7 +287,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
     <Shell
       nav={nav}
       title="HQ Admin"
-      subtitle={`Coco Chick Sdn Bhd · ${outletCount ?? "—"} active outlet${outletCount === 1 ? "" : "s"}`}
+      subtitle={`鸡饭王 Sdn Bhd · ${outletCount ?? "—"} active outlet${outletCount === 1 ? "" : "s"}`}
       headerRight={
         <div className="flex items-center gap-2">
           {/* Identity lockup (#3): a shield "HQ" monogram + permanent

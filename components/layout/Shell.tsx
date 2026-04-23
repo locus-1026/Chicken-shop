@@ -37,11 +37,16 @@ export function Shell({
           column scrolls. `h-screen` + overflow-y-auto so long nav still scrolls
           internally on short viewports. */}
       <aside className="hidden lg:flex sticky top-0 h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-[color:var(--color-border)] bg-white px-5 py-6">
-        <Link href="/" className="mb-8 flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[color:var(--color-brand)] text-white font-bold">C</div>
+        <Link href="/" className="mb-8 flex items-center gap-2.5">
+          {/* Brand mark — logo image instead of the old "C" monogram. */}
+          <img
+            src="/brand/logo.png"
+            alt="JI FAN WANG"
+            className="h-10 w-10 shrink-0 rounded-lg object-contain"
+          />
           <div className="leading-tight">
-            <div className="text-[15px] font-semibold">Coco Chick</div>
-            <div className="text-[11px] text-[color:var(--color-ink-soft)]">Franchise Portal</div>
+            <div className="text-[14px] font-semibold tracking-tight">JI FAN WANG</div>
+            <div className="text-[11px] font-medium text-[color:var(--color-ink-soft)]">鸡饭王 · Franchise Portal</div>
           </div>
         </Link>
 

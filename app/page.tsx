@@ -4,12 +4,17 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[color:var(--color-background)]">
       <section className="mx-auto flex max-w-5xl flex-col items-center px-6 py-16 text-center">
-        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[color:var(--color-brand)] text-white text-2xl font-bold">
-          C
-        </div>
+        <img
+          src="/brand/logo.png"
+          alt="JI FAN WANG"
+          className="mb-4 h-20 w-20 object-contain"
+        />
         <h1 className="text-4xl font-bold tracking-tight text-[color:var(--color-ink)] sm:text-5xl">
-          Coco Chick Franchise Portal
+          JI FAN WANG · 鸡饭王
         </h1>
+        <div className="mt-1 text-sm font-medium text-[color:var(--color-brand-700)]">
+          Franchise Portal
+        </div>
         <p className="mt-3 max-w-xl text-[color:var(--color-ink-soft)]">
           One warm home for sales, royalties, training, compliance, and everything your outlet needs to run a great day.
         </p>
@@ -43,7 +48,7 @@ export default function Home() {
         </div>
 
         <p className="mt-10 text-xs text-[color:var(--color-ink-soft)]">
-          Coco Chick Sdn Bhd · SSM 202101987654 (9876543-B) · FR-2021-0317 (KPDNHEP)
+          鸡饭王 Sdn Bhd · SSM 202101987654 (9876543-B) · FR-2021-0317 (KPDNHEP)
         </p>
       </section>
     </main>

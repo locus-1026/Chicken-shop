@@ -112,7 +112,7 @@ export default function AdminLoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="email"
-                  placeholder="admin@cocochick.com.my"
+                  placeholder="admin@jifanwang.com.my"
                   className="w-full bg-transparent py-3 text-sm placeholder:text-white/40 focus:outline-none"
                 />
               </div>
@@ -163,7 +163,7 @@ export default function AdminLoginPage() {
             </button>
             {showDemo && (
               <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-[12px] text-white/75">
-                <div><b>admin@cocochick.com.my</b> · <span className="font-mono">coco123</span></div>
+                <div><b>admin@jifanwang.com.my</b> · <span className="font-mono">coco123</span></div>
               </div>
             )}
           </div>

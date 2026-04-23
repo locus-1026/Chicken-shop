@@ -19,11 +19,11 @@ import type {
 export const mockFranchisees: Franchisee[] = [
   {
     id: "f-1",
-    business_name: "Coco Chick PJ Sdn Bhd",
+    business_name: "鸡饭王 PJ Sdn Bhd",
     owner_name: "Lim Chee Keong",
     ic_number: "750812-10-5533",
     contact: "+6012-345 6781",
-    email: "lim@cocochick.my",
+    email: "lim@jifanwang.my",
     agreement_start: "2021-01-10",
     agreement_end: "2027-01-09",
     status: "active",
@@ -31,11 +31,11 @@ export const mockFranchisees: Franchisee[] = [
   },
   {
     id: "f-2",
-    business_name: "Coco Chick Central Sdn Bhd",
+    business_name: "鸡饭王 Central Sdn Bhd",
     owner_name: "Priya Nair",
     ic_number: "820315-14-4421",
     contact: "+6013-222 1188",
-    email: "priya@cocochick.my",
+    email: "priya@jifanwang.my",
     agreement_start: "2021-06-01",
     agreement_end: "2026-05-31",
     status: "active",
@@ -43,11 +43,11 @@ export const mockFranchisees: Franchisee[] = [
   },
   {
     id: "f-3",
-    business_name: "Coco Chick Johor Sdn Bhd",
+    business_name: "鸡饭王 Johor Sdn Bhd",
     owner_name: "Ahmad Fadzli",
     ic_number: "880922-01-6677",
     contact: "+6019-667 3322",
-    email: "fadzli@cocochick.my",
+    email: "fadzli@jifanwang.my",
     agreement_start: "2023-09-15",
     agreement_end: "2026-09-14",
     status: "active",
@@ -55,11 +55,11 @@ export const mockFranchisees: Franchisee[] = [
   },
   {
     id: "f-4",
-    business_name: "Coco Chick Borneo Sdn Bhd",
+    business_name: "鸡饭王 Borneo Sdn Bhd",
     owner_name: "Kevin Ooi",
     ic_number: "910204-13-2211",
     contact: "+6016-889 7744",
-    email: "kevin@cocochick.my",
+    email: "kevin@jifanwang.my",
     agreement_start: "2024-02-10",
     agreement_end: "2027-02-09",
     status: "active",
@@ -126,7 +126,7 @@ export const mockSalesReports: SalesReport[] = mockOutlets.flatMap((o, oi) =>
 export const mockTrainingModules: TrainingModule[] = [
   { id: "t-1", title: "Signature Chicken Rice Preparation", description: "Master the Hainanese poaching technique and the signature chilli sauce.", video_url: "https://example.com/v/1.mp4", materials_url: null, category: "Operations", passing_score: 80 },
   { id: "t-2", title: "Food Safety & Hygiene SOP",          description: "MOH-aligned food handling, temperature control, and cleaning protocols.",   video_url: "https://example.com/v/2.mp4", materials_url: "https://example.com/p/2.pdf", category: "Compliance", passing_score: 85 },
-  { id: "t-3", title: "POS System Walkthrough",             description: "End-to-end tour of the Coco Chick POS, reports, and cashier shortcuts.",    video_url: "https://example.com/v/3.mp4", materials_url: null, category: "Technology",  passing_score: 75 },
+  { id: "t-3", title: "POS System Walkthrough",             description: "End-to-end tour of the 鸡饭王 POS, reports, and cashier shortcuts.",    video_url: "https://example.com/v/3.mp4", materials_url: null, category: "Technology",  passing_score: 75 },
   { id: "t-4", title: "Handling Customer Complaints",       description: "De-escalation and recovery playbooks for common front-line situations.",     video_url: "https://example.com/v/4.mp4", materials_url: null, category: "Service",     passing_score: 80 },
   { id: "t-5", title: "Brand Standards & Outlet Display",   description: "Storefront merchandising, uniforms, and signage guidelines.",                 video_url: null, materials_url: "https://example.com/p/5.pdf", category: "Brand", passing_score: 70 },
 ];
@@ -160,7 +160,7 @@ export const mockTickets: SupportTicket[] = [
 ];
 
 export const mockAnnouncements: Announcement[] = [
-  { id: "an-1", title: "Welcome to the Coco Chick Portal", body: "Your new home for sales reporting, training, royalties, and support. Pinned forever.", pinned: true,  publish_at: new Date(Date.now() - 30 * 864e5).toISOString(), target_role: null },
+  { id: "an-1", title: "Welcome to the JI FAN WANG Portal", body: "Your new home for sales reporting, training, royalties, and support. Pinned forever.", pinned: true,  publish_at: new Date(Date.now() - 30 * 864e5).toISOString(), target_role: null },
   { id: "an-2", title: "May Drop: Mother's Day Bundle",    body: "New creative assets are live in the Marketing tab. Campaign runs 3–12 May.",           pinned: false, publish_at: new Date(Date.now() - 3  * 864e5).toISOString(), target_role: null },
   { id: "an-3", title: "Food Safety Refresher Audit — Q2", body: "Audit window 1 May – 30 May. Please make sure your temperature logs are up to date.",   pinned: false, publish_at: new Date(Date.now() - 1  * 864e5).toISOString(), target_role: null },
 ];

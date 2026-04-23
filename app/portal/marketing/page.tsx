@@ -19,7 +19,7 @@ export default function MarketingPage() {
 
   const download = (asset: MarketingAsset) => {
     // Generate a simple placeholder file so the download actually does something.
-    const content = `Coco Chick — Marketing Asset\n\nTitle: ${asset.title}\nCategory: ${asset.category}\nFile type: ${asset.file_type}\n\n(In production this would be the real ${asset.file_type.toUpperCase()} from Supabase Storage.)\n`;
+    const content = `JI FAN WANG · 鸡饭王 — Marketing Asset\n\nTitle: ${asset.title}\nCategory: ${asset.category}\nFile type: ${asset.file_type}\n\n(In production this would be the real ${asset.file_type.toUpperCase()} from Supabase Storage.)\n`;
     const blob = new Blob([content], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
