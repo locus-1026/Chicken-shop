@@ -11,11 +11,13 @@ import { monthLabel, daysUntil } from "@/lib/utils";
 import {
   PhoneCall, Receipt, Calendar as CalIcon, CheckCircle2, Clock,
   ChevronLeft, ChevronRight, MapPin, AlertTriangle, XCircle, HelpCircle,
+  ShieldCheck, FileSignature, Megaphone,
 } from "lucide-react";
 
+type CalKind = "coaching" | "royalty_due" | "audit_due" | "contract_renewal" | "scheduled_post";
 type CalEvent = {
   id: string;
-  kind: "coaching" | "royalty_due";
+  kind: CalKind;
   at: string;
   title: string;
   body: string;
@@ -24,7 +26,7 @@ type CalEvent = {
   proposedTime?: string;
 };
 
-type Filter = "all" | "coaching" | "royalty_due";
+type Filter = "all" | CalKind;
 
 // ——— date helpers ———
 function toISODate(d: Date) {
@@ -36,7 +38,7 @@ function startOfWeek(d: Date) { const r = new Date(d); r.setHours(0,0,0,0); r.se
 function sameDay(a: string, b: string) { return a.slice(0, 10) === b.slice(0, 10); }
 
 export default function CalendarPage() {
-  const { outlet } = useCurrentOutlet();
+  const { outlet, franchisee } = useCurrentOutlet();
   const { profile } = useAuth();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [events, setEvents] = useState<CalEvent[]>([]);
@@ -46,7 +48,13 @@ export default function CalendarPage() {
 
   const load = useCallback(async () => {
     if (!profile?.id) return;
-    const [{ data: coaching }, { data: royalties }] = await Promise.all([
+    const nowIso = new Date().toISOString();
+    const [
+      { data: coaching },
+      { data: royalties },
+      { data: audits },
+      { data: futurePosts },
+    ] = await Promise.all([
       supabase
         .from("notifications")
         .select("id, kind, title, body, scheduled_at, status, response_note, responded_at")
@@ -58,6 +66,16 @@ export default function CalendarPage() {
         .select("id, due_date, royalty_amount, marketing_fee, status, period:billing_period")
         .eq("outlet_id", outlet.id)
         .neq("status", "paid"),
+      supabase
+        .from("compliance_audits")
+        .select("audit_date")
+        .eq("outlet_id", outlet.id)
+        .order("audit_date", { ascending: false })
+        .limit(1),
+      supabase
+        .from("announcements")
+        .select("id, title, body, publish_at, target_role")
+        .gte("publish_at", nowIso),
     ]);
 
     const merged: CalEvent[] = [];
@@ -89,9 +107,61 @@ export default function CalendarPage() {
       });
     }
 
+    // Audit window — last audit + 30 days, or opening_date + 30 if never.
+    const lastAuditDate = ((audits ?? []) as { audit_date: string }[])[0]?.audit_date;
+    const auditBase = lastAuditDate ?? outlet.opening_date;
+    if (auditBase) {
+      const d = new Date(auditBase);
+      d.setDate(d.getDate() + 30);
+      const dueIso = toISODate(d);
+      const du = daysUntil(dueIso);
+      if (du <= 45) {
+        merged.push({
+          id: "audit-" + outlet.id,
+          kind: "audit_due",
+          at: dueIso,
+          title: lastAuditDate ? "HQ audit window" : "First HQ audit",
+          body: lastAuditDate
+            ? `Last audit ${new Date(lastAuditDate).toLocaleDateString("en-MY", { day: "numeric", month: "short" })} — HQ may visit around this date.`
+            : "HQ will schedule your first audit within 30 days of opening.",
+          tone: du < 0 ? "danger" : du <= 7 ? "warning" : "brand",
+        });
+      }
+    }
+
+    // Contract renewal — own agreement end within 90 days.
+    if (franchisee?.agreement_end) {
+      const du = daysUntil(franchisee.agreement_end);
+      if (du <= 90) {
+        merged.push({
+          id: "renew-" + franchisee.id,
+          kind: "contract_renewal",
+          at: franchisee.agreement_end,
+          title: du < 0 ? "Contract expired" : "Contract renewal",
+          body: du < 0
+            ? `Your franchise agreement ended ${Math.abs(du)}d ago — HQ will reach out.`
+            : `Your franchise agreement ends in ${du}d. HQ will be in touch to renew.`,
+          tone: du < 0 ? "danger" : du <= 30 ? "warning" : "brand",
+        });
+      }
+    }
+
+    // Scheduled HQ posts — any upcoming announcement (public or franchisee-targeted).
+    for (const p of ((futurePosts ?? []) as { id: string; title: string; body: string; publish_at: string; target_role: string | null }[])) {
+      if (p.target_role && p.target_role !== "franchisee") continue;
+      merged.push({
+        id: "post-" + p.id,
+        kind: "scheduled_post",
+        at: p.publish_at,
+        title: "HQ post · " + p.title,
+        body: (p.body ?? "").replace(/<[^>]+>/g, " ").slice(0, 120),
+        tone: "brand",
+      });
+    }
+
     merged.sort((a, b) => (a.at < b.at ? -1 : 1));
     setEvents(merged);
-  }, [supabase, profile?.id, outlet.id]);
+  }, [supabase, profile?.id, outlet.id, outlet.opening_date, franchisee?.id, franchisee?.agreement_end]);
 
   useEffect(() => {
     load();
@@ -100,6 +170,9 @@ export default function CalendarPage() {
       .channel("portal-calendar-" + profile.id)
       .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter: `recipient_id=eq.${profile.id}` }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "royalties" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "compliance_audits" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "announcements" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "franchisees" }, load)
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [load, supabase, profile?.id]);
@@ -114,11 +187,12 @@ export default function CalendarPage() {
   }, [filteredAll]);
 
   const dayEvents = filteredAll.filter((e) => sameDay(e.at, selectedDate));
-  const morning = dayEvents.filter((e) => new Date(e.at).getHours() < 12);
-  const afternoon = dayEvents.filter((e) => new Date(e.at).getHours() >= 12 && new Date(e.at).getHours() < 18);
-  const evening = dayEvents.filter((e) => new Date(e.at).getHours() >= 18);
-  const allDay = dayEvents.filter((e) => e.kind === "royalty_due");
-  const timed = dayEvents.filter((e) => e.kind !== "royalty_due");
+  const isAllDay = (k: CalKind) => k === "royalty_due" || k === "audit_due" || k === "contract_renewal";
+  const allDay = dayEvents.filter((e) => isAllDay(e.kind));
+  const morning = dayEvents.filter((e) => !isAllDay(e.kind) && new Date(e.at).getHours() < 12);
+  const afternoon = dayEvents.filter((e) => !isAllDay(e.kind) && new Date(e.at).getHours() >= 12 && new Date(e.at).getHours() < 18);
+  const evening = dayEvents.filter((e) => !isAllDay(e.kind) && new Date(e.at).getHours() >= 18);
+  const timed = dayEvents.filter((e) => !isAllDay(e.kind));
 
   const rangeLabel = `${weekDays[0].toLocaleDateString("en-MY", { day: "numeric", month: "short" })} – ${weekDays[6].toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })}`;
 
@@ -155,6 +229,9 @@ export default function CalendarPage() {
           <FilterTab active={filter === "all"} onClick={() => setFilter("all")} label="All" />
           <FilterTab active={filter === "coaching"} onClick={() => setFilter("coaching")} label="Coaching" icon={<PhoneCall size={11} />} />
           <FilterTab active={filter === "royalty_due"} onClick={() => setFilter("royalty_due")} label="Royalties" icon={<Receipt size={11} />} />
+          <FilterTab active={filter === "audit_due"} onClick={() => setFilter("audit_due")} label="Audits" icon={<ShieldCheck size={11} />} />
+          <FilterTab active={filter === "contract_renewal"} onClick={() => setFilter("contract_renewal")} label="Renewal" icon={<FileSignature size={11} />} />
+          <FilterTab active={filter === "scheduled_post"} onClick={() => setFilter("scheduled_post")} label="HQ posts" icon={<Megaphone size={11} />} />
         </div>
       </div>
 
@@ -311,24 +388,31 @@ function StatusPill({ e }: { e: CalEvent }) {
     if (e.status === "proposed") return <Pill tone="warning"><Clock size={10} /> Pending HQ</Pill>;
     if (e.status === "declined" || e.status === "cancelled") return <Pill tone="danger"><XCircle size={10} /> Cancelled</Pill>;
     if (e.status === "done") return <Pill tone="success"><CheckCircle2 size={10} /> Done</Pill>;
-    // Default — HQ scheduled, franchisee hasn't responded yet
     return <Pill tone="warning"><HelpCircle size={10} /> Pending your reply</Pill>;
   }
-  // Royalty statuses
+  if (e.kind === "audit_due") {
+    if (e.tone === "danger") return <Pill tone="danger"><AlertTriangle size={10} /> Overdue</Pill>;
+    return <Pill tone="warning"><ShieldCheck size={10} /> Audit window</Pill>;
+  }
+  if (e.kind === "contract_renewal") {
+    if (e.tone === "danger") return <Pill tone="danger"><AlertTriangle size={10} /> Expired</Pill>;
+    return <Pill tone="warning"><FileSignature size={10} /> Renewal due</Pill>;
+  }
+  if (e.kind === "scheduled_post") return <Pill tone="brand"><Megaphone size={10} /> HQ post</Pill>;
   if (e.tone === "danger") return <Pill tone="danger"><AlertTriangle size={10} /> Overdue</Pill>;
   return <Pill tone="warning"><Clock size={10} /> Due</Pill>;
 }
 
 function EventCard({ e }: { e: CalEvent }) {
   const when = new Date(e.at);
-  const isRoyalty = e.kind === "royalty_due";
-  const timeStart = isRoyalty
+  const timed = e.kind === "coaching" || e.kind === "scheduled_post";
+  const timeStart = !timed
     ? null
     : when.toLocaleTimeString("en-MY", { hour: "2-digit", minute: "2-digit", hour12: false });
-  const timeEnd = isRoyalty
+  const timeEnd = !timed
     ? null
     : new Date(when.getTime() + 30 * 60_000).toLocaleTimeString("en-MY", { hour: "2-digit", minute: "2-digit", hour12: false });
-  const duration = isRoyalty ? "all day" : "30min";
+  const duration = !timed ? "all day" : "30min";
 
   const borderTone =
     e.tone === "success" ? "border-l-[color:var(--color-success)]"
@@ -336,9 +420,13 @@ function EventCard({ e }: { e: CalEvent }) {
     : e.tone === "danger" ? "border-l-[color:var(--color-danger)]"
     : "border-l-[color:var(--color-brand)]";
 
-  // Coaching → News tab (where franchisee can accept/propose/etc).
-  // Royalty → Royalty tab (where franchisee uploads proof / sees amount).
-  const href = e.kind === "coaching" ? "/portal/announcements" : "/portal/royalty";
+  // Route each kind to the most useful franchisee page.
+  const href =
+    e.kind === "coaching" ? "/portal/announcements"
+    : e.kind === "royalty_due" ? "/portal/royalty"
+    : e.kind === "audit_due" ? "/portal/compliance"
+    : e.kind === "scheduled_post" ? "/portal/announcements"
+    : "/portal";
 
   return (
     <Link href={href} className="block">
@@ -347,7 +435,7 @@ function EventCard({ e }: { e: CalEvent }) {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 text-[13px] font-medium text-[color:var(--color-ink)]">
               <Clock size={13} className="text-[color:var(--color-ink-soft)]" />
-              {isRoyalty
+              {!timed
                 ? <span>All day</span>
                 : <span><span className="font-semibold">{timeStart}</span> – {timeEnd}</span>}
               <span className="text-[color:var(--color-ink-soft)]">· {duration}</span>
@@ -361,11 +449,15 @@ function EventCard({ e }: { e: CalEvent }) {
                   <span className="inline-flex items-center gap-1"><MapPin size={12} /> Phone call</span>
                 </>
               )}
-              {e.kind === "royalty_due" && (
-                <span className="inline-flex items-center gap-1"><Receipt size={12} /> Pay to HQ</span>
-              )}
+              {e.kind === "royalty_due" && <span className="inline-flex items-center gap-1"><Receipt size={12} /> Pay to HQ</span>}
+              {e.kind === "audit_due" && <span className="inline-flex items-center gap-1"><ShieldCheck size={12} /> Compliance</span>}
+              {e.kind === "contract_renewal" && <span className="inline-flex items-center gap-1"><FileSignature size={12} /> Agreement</span>}
+              {e.kind === "scheduled_post" && <span className="inline-flex items-center gap-1"><Megaphone size={12} /> HQ post</span>}
               <span className="ml-auto text-[11px] text-[color:var(--color-brand-700)]">
-                {e.kind === "coaching" ? "Open in News →" : "Open royalty →"}
+                {e.kind === "coaching" ? "Open in News →"
+                 : e.kind === "royalty_due" ? "Open royalty →"
+                 : e.kind === "audit_due" ? "Open compliance →"
+                 : "Open →"}
               </span>
             </div>
             {e.proposedTime && (

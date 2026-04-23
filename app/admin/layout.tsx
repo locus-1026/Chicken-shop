@@ -104,10 +104,11 @@ function AdminShell({ children }: { children: React.ReactNode }) {
           .in("status", ["open", "in_progress"]),
         supabase
           .from("compliance_audits")
-          .select("risk_flag"),
+          .select("outlet_id, audit_date, risk_flag")
+          .order("audit_date", { ascending: false }),
         supabase
           .from("outlets")
-          .select("id"),
+          .select("id, opening_date"),
         supabase
           .from("royalties")
           .select("id", { count: "exact", head: true })
@@ -138,7 +139,25 @@ function AdminShell({ children }: { children: React.ReactNode }) {
       const openIds = ((ticketRows ?? []) as { id: string; created_at: string }[]);
       setOpenTickets(openIds.length);
       void supportSeen; // watermark no longer used for this badge
-      setAtRiskAudits(((auditRows ?? []) as { risk_flag: boolean }[]).filter((a) => a.risk_flag).length);
+      // Audits badge: count outlets that need HQ action — past the
+      // 30-day audit window, or never audited at all. Also bump for any
+      // at-risk outlets (two sub-80 scores). Matches 'Needs action' KPI
+      // on /admin/audits so the sidebar agrees with the page.
+      const auditList = (auditRows ?? []) as { outlet_id: string; audit_date: string; risk_flag: boolean }[];
+      const outletAuditList = (outletRows ?? []) as { id: string; opening_date: string | null }[];
+      const latestByOutlet: Record<string, string> = {};
+      for (const a of auditList) {
+        if (!latestByOutlet[a.outlet_id]) latestByOutlet[a.outlet_id] = a.audit_date;
+      }
+      const AUDIT_CYCLE_MS = 30 * 86_400_000;
+      let needsAudit = 0;
+      for (const o of outletAuditList) {
+        const last = latestByOutlet[o.id];
+        if (!last) { needsAudit += 1; continue; } // never audited
+        if (Date.now() - new Date(last).getTime() > AUDIT_CYCLE_MS) needsAudit += 1; // overdue
+      }
+      const riskCount = auditList.filter((a) => a.risk_flag).length;
+      setAtRiskAudits(Math.max(needsAudit, riskCount));
 
       // Calendar alert: HQ-wide coaching calls still to happen today (from
       // now onwards) + any royalties due today that aren't paid yet. Badge

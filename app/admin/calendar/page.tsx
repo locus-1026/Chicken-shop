@@ -10,6 +10,7 @@ import { monthLabel, daysUntil } from "@/lib/utils";
 import {
   PhoneCall, Receipt, Calendar as CalIcon, CheckCircle2, Clock, AlertTriangle,
   ChevronLeft, ChevronRight, User, XCircle, HelpCircle,
+  ShieldCheck, FileSignature, Megaphone,
 } from "lucide-react";
 
 function StatusPill({ e }: { e: CalEvent }) {
@@ -20,13 +21,23 @@ function StatusPill({ e }: { e: CalEvent }) {
     if (e.status === "done") return <Pill tone="success"><CheckCircle2 size={10} /> Done</Pill>;
     return <Pill tone="warning"><HelpCircle size={10} /> Awaiting reply</Pill>;
   }
+  if (e.kind === "audit_due") {
+    if (e.tone === "danger") return <Pill tone="danger"><AlertTriangle size={10} /> Overdue</Pill>;
+    return <Pill tone="warning"><ShieldCheck size={10} /> Audit due</Pill>;
+  }
+  if (e.kind === "contract_renewal") {
+    if (e.tone === "danger") return <Pill tone="danger"><AlertTriangle size={10} /> Expired</Pill>;
+    return <Pill tone="warning"><FileSignature size={10} /> Renewal due</Pill>;
+  }
+  if (e.kind === "scheduled_post") return <Pill tone="brand"><Megaphone size={10} /> Scheduled post</Pill>;
   if (e.tone === "danger") return <Pill tone="danger"><AlertTriangle size={10} /> Overdue</Pill>;
   return <Pill tone="warning"><Clock size={10} /> Due</Pill>;
 }
 
+type CalKind = "coaching" | "royalty_due" | "audit_due" | "contract_renewal" | "scheduled_post";
 type CalEvent = {
   id: string;
-  kind: "coaching" | "royalty_due";
+  kind: CalKind;
   at: string;
   title: string;
   body: string;
@@ -37,7 +48,7 @@ type CalEvent = {
   link?: string;
 };
 
-type Filter = "all" | "coaching" | "royalty_due";
+type Filter = "all" | CalKind;
 
 function toISODate(d: Date) {
   const y = d.getFullYear(); const m = String(d.getMonth() + 1).padStart(2, "0"); const day = String(d.getDate()).padStart(2, "0");
@@ -82,7 +93,16 @@ export default function AdminCalendarPage() {
   };
 
   const load = useCallback(async () => {
-    const [{ data: coaching }, { data: royalties }, { data: outlets }, { data: franchisees }, { data: profs }] = await Promise.all([
+    const nowIso = new Date().toISOString();
+    const [
+      { data: coaching },
+      { data: royalties },
+      { data: outlets },
+      { data: franchisees },
+      { data: profs },
+      { data: audits },
+      { data: futurePosts },
+    ] = await Promise.all([
       supabase
         .from("notifications")
         .select("id, recipient_id, title, body, scheduled_at, status, response_note, responded_at")
@@ -95,6 +115,11 @@ export default function AdminCalendarPage() {
       supabase.from("outlets").select("*"),
       supabase.from("franchisees").select("*"),
       supabase.from("profiles").select("id, franchisee_id, full_name"),
+      supabase.from("compliance_audits").select("outlet_id, audit_date").order("audit_date", { ascending: false }),
+      supabase
+        .from("announcements")
+        .select("id, title, body, publish_at, target_role")
+        .gte("publish_at", nowIso),
     ]);
 
     const outletList = (outlets ?? []) as Outlet[];
@@ -146,6 +171,75 @@ export default function AdminCalendarPage() {
       });
     }
 
+    // --- Audit due dates --------------------------------------------------
+    // Per outlet: last audit + 30 days (monthly cadence). If never audited,
+    // use opening_date + 30 days. Surfaces overdue audits and upcoming ones
+    // so HQ can plan visits.
+    const latestAuditByOutlet: Record<string, string> = {};
+    for (const a of ((audits ?? []) as { outlet_id: string; audit_date: string }[])) {
+      if (!latestAuditByOutlet[a.outlet_id]) latestAuditByOutlet[a.outlet_id] = a.audit_date;
+    }
+    for (const o of outletList) {
+      const last = latestAuditByOutlet[o.id];
+      const baseDate = last ?? o.opening_date;
+      if (!baseDate) continue;
+      const due = new Date(baseDate);
+      due.setDate(due.getDate() + 30);
+      const dueIso = toISODate(due);
+      const d = daysUntil(dueIso);
+      if (d > 45) continue; // too far out — don't clutter
+      const fr = o.franchisee_id ? fById.get(o.franchisee_id) : undefined;
+      merged.push({
+        id: "audit-" + o.id,
+        kind: "audit_due",
+        at: dueIso,
+        title: last ? "Audit due (monthly)" : "First audit due",
+        body: last
+          ? `Last audited ${new Date(last).toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })}.`
+          : "Opening audit within 30 days of opening.",
+        subject: `${o.outlet_code} · ${fr?.owner_name ?? ""}`,
+        tone: d < 0 ? "danger" : d <= 7 ? "warning" : "brand",
+        link: "/admin/audits",
+      });
+    }
+
+    // --- Contract renewals ------------------------------------------------
+    // Any franchisee whose agreement_end is within the next 90 days (or
+    // already expired) — lets HQ start renewal conversations in time.
+    for (const fr of fList) {
+      if (!fr.agreement_end) continue;
+      const d = daysUntil(fr.agreement_end);
+      if (d > 90) continue;
+      merged.push({
+        id: "renew-" + fr.id,
+        kind: "contract_renewal",
+        at: fr.agreement_end,
+        title: d < 0 ? "Contract expired" : "Contract renewal",
+        body: d < 0
+          ? `Agreement ended ${Math.abs(d)}d ago — renew or suspend.`
+          : `Agreement ends in ${d}d — start renewal conversation.`,
+        subject: `${fr.business_name} · ${fr.owner_name}`,
+        tone: d < 0 ? "danger" : d <= 30 ? "warning" : "brand",
+        link: `/admin/franchisees/${fr.id}`,
+      });
+    }
+
+    // --- Scheduled announcements -----------------------------------------
+    // HQ posts queued for future publish — visible so HQ doesn't double-post
+    // or forget to replace a draft.
+    for (const p of ((futurePosts ?? []) as { id: string; title: string; body: string; publish_at: string; target_role: string | null }[])) {
+      merged.push({
+        id: "post-" + p.id,
+        kind: "scheduled_post",
+        at: p.publish_at,
+        title: "Scheduled · " + p.title,
+        body: (p.body ?? "").replace(/<[^>]+>/g, " ").slice(0, 120),
+        subject: "Target: " + (p.target_role ?? "all"),
+        tone: "brand",
+        link: "/admin/announcements",
+      });
+    }
+
     merged.sort((a, b) => (a.at < b.at ? -1 : 1));
     setEvents(merged);
   }, [supabase]);
@@ -156,6 +250,9 @@ export default function AdminCalendarPage() {
       .channel("admin-calendar")
       .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "royalties" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "compliance_audits" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "announcements" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "franchisees" }, load)
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [load, supabase]);
@@ -170,10 +267,13 @@ export default function AdminCalendarPage() {
   }, [filteredAll]);
 
   const dayEvents = filteredAll.filter((e) => sameDay(e.at, selectedDate));
-  const allDay = dayEvents.filter((e) => e.kind === "royalty_due");
-  const morning = dayEvents.filter((e) => e.kind !== "royalty_due" && new Date(e.at).getHours() < 12);
-  const afternoon = dayEvents.filter((e) => e.kind !== "royalty_due" && new Date(e.at).getHours() >= 12 && new Date(e.at).getHours() < 18);
-  const evening = dayEvents.filter((e) => e.kind !== "royalty_due" && new Date(e.at).getHours() >= 18);
+  // All-day buckets: royalties, audits, renewals — only coaching & scheduled
+  // posts have a real time-of-day component.
+  const isAllDay = (k: CalKind) => k === "royalty_due" || k === "audit_due" || k === "contract_renewal";
+  const allDay = dayEvents.filter((e) => isAllDay(e.kind));
+  const morning = dayEvents.filter((e) => !isAllDay(e.kind) && new Date(e.at).getHours() < 12);
+  const afternoon = dayEvents.filter((e) => !isAllDay(e.kind) && new Date(e.at).getHours() >= 12 && new Date(e.at).getHours() < 18);
+  const evening = dayEvents.filter((e) => !isAllDay(e.kind) && new Date(e.at).getHours() >= 18);
 
   const rangeLabel = `${weekDays[0].toLocaleDateString("en-MY", { day: "numeric", month: "short" })} – ${weekDays[6].toLocaleDateString("en-MY", { day: "numeric", month: "short", year: "numeric" })}`;
 
@@ -216,6 +316,9 @@ export default function AdminCalendarPage() {
           <FilterTab active={filter === "all"} onClick={() => setFilter("all")} label="All" />
           <FilterTab active={filter === "coaching"} onClick={() => setFilter("coaching")} label="Coaching" icon={<PhoneCall size={11} />} />
           <FilterTab active={filter === "royalty_due"} onClick={() => setFilter("royalty_due")} label="Royalties" icon={<Receipt size={11} />} />
+          <FilterTab active={filter === "audit_due"} onClick={() => setFilter("audit_due")} label="Audits" icon={<ShieldCheck size={11} />} />
+          <FilterTab active={filter === "contract_renewal"} onClick={() => setFilter("contract_renewal")} label="Renewals" icon={<FileSignature size={11} />} />
+          <FilterTab active={filter === "scheduled_post"} onClick={() => setFilter("scheduled_post")} label="Posts" icon={<Megaphone size={11} />} />
         </div>
       </div>
 
@@ -439,10 +542,10 @@ function FilterTab({ active, onClick, label, icon }: { active: boolean; onClick:
 
 function EventCard({ e }: { e: CalEvent }) {
   const when = new Date(e.at);
-  const isRoyalty = e.kind === "royalty_due";
-  const timeStart = isRoyalty ? null : when.toLocaleTimeString("en-MY", { hour: "2-digit", minute: "2-digit", hour12: false });
-  const timeEnd = isRoyalty ? null : new Date(when.getTime() + 30 * 60_000).toLocaleTimeString("en-MY", { hour: "2-digit", minute: "2-digit", hour12: false });
-  const duration = isRoyalty ? "all day" : "30min";
+  const timed = e.kind === "coaching" || e.kind === "scheduled_post";
+  const timeStart = !timed ? null : when.toLocaleTimeString("en-MY", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const timeEnd = !timed ? null : new Date(when.getTime() + 30 * 60_000).toLocaleTimeString("en-MY", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const duration = !timed ? "all day" : "30min";
 
   const borderTone =
     e.tone === "success" ? "border-l-[color:var(--color-success)]"
@@ -456,7 +559,7 @@ function EventCard({ e }: { e: CalEvent }) {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-[13px] font-medium text-[color:var(--color-ink)]">
             <Clock size={13} className="text-[color:var(--color-ink-soft)]" />
-            {isRoyalty
+            {!timed
               ? <span>All day</span>
               : <span><span className="font-semibold">{timeStart}</span> – {timeEnd}</span>}
             <span className="text-[color:var(--color-ink-soft)]">· {duration}</span>
@@ -467,6 +570,9 @@ function EventCard({ e }: { e: CalEvent }) {
             <span className="inline-flex items-center gap-1"><User size={12} /> {e.subject}</span>
             {e.kind === "coaching" && <span className="inline-flex items-center gap-1"><PhoneCall size={12} /> Phone call</span>}
             {e.kind === "royalty_due" && <span className="inline-flex items-center gap-1"><Receipt size={12} /> Royalty</span>}
+            {e.kind === "audit_due" && <span className="inline-flex items-center gap-1"><ShieldCheck size={12} /> Compliance audit</span>}
+            {e.kind === "contract_renewal" && <span className="inline-flex items-center gap-1"><FileSignature size={12} /> Franchise renewal</span>}
+            {e.kind === "scheduled_post" && <span className="inline-flex items-center gap-1"><Megaphone size={12} /> Announcement</span>}
           </div>
           {e.proposedTime && (
             <div className="mt-2 rounded-md bg-[color:var(--color-warning-soft)] px-2 py-1 text-[11px] text-[color:var(--color-warning)]">
