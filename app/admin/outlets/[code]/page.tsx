@@ -15,7 +15,6 @@ import {
   mockOutlets,
   mockSalesReports,
   mockTickets,
-  mockTrainingModules,
 } from "@/lib/mock-data";
 import type { Royalty } from "@/lib/types";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -51,10 +50,6 @@ function syntheticMix(outletId: string) {
   const delivery = Math.max(5, 100 - dineIn - takeaway);
   return { dine_in: dineIn, takeaway, delivery, beverage: 12 + ((seed >> 5) % 15) };
 }
-function trainingPctForOutlet(outletId: string) {
-  return 45 + (hash("train:" + outletId) % 55);
-}
-
 export default function OutletDetailPage() {
   const params = useParams<{ code: string }>();
   const toast = useToast();
@@ -73,10 +68,19 @@ export default function OutletDetailPage() {
   // Real royalties + verified-proof ids for this outlet, pulled on mount.
   const [royalties, setRoyalties] = useState<Royalty[]>([]);
   const [verifiedByRoyalty, setVerifiedByRoyalty] = useState<Record<string, boolean>>({});
+  // Real data to replace the mock seeds the rest of this page was using —
+  // so the admin view of an outlet matches what the franchisee actually sees
+  // in the portal (training progress, MTD sales, last audit).
+  const [realMtd, setRealMtd] = useState<number | null>(null);
+  const [realTarget, setRealTarget] = useState<number | null>(null);
+  const [realLatestAudit, setRealLatestAudit] = useState<{ score: number; audit_date: string; auditor: string } | null>(null);
+  const [trainingDone, setTrainingDone] = useState<number>(0);
+  const [trainingTotal, setTrainingTotal] = useState<number>(0);
   useEffect(() => {
     if (!outlet) return;
     const supabase = createSupabaseBrowserClient();
     (async () => {
+      // --- Royalties (already real) ---
       const { data: roys } = await supabase
         .from("royalties")
         .select("id, outlet_id, gross_sales, royalty_amount, marketing_fee, due_date, paid_at, status, period:billing_period")
@@ -95,6 +99,64 @@ export default function OutletDetailPage() {
         }
         setVerifiedByRoyalty(v);
       }
+
+      // --- Real outlet (for real UUID + target) ---
+      const { data: realOutletRow } = await supabase
+        .from("outlets")
+        .select("id, franchisee_id, monthly_target")
+        .eq("outlet_code", outlet.outlet_code)
+        .maybeSingle();
+      if (!realOutletRow) return;
+      if (realOutletRow.monthly_target != null) setRealTarget(realOutletRow.monthly_target);
+
+      // --- Month-to-date sales (local YYYY-MM range, not UTC) ---
+      const _d = new Date();
+      const yy = _d.getFullYear();
+      const mm = _d.getMonth();
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const firstOfMonth = `${yy}-${pad(mm + 1)}-01`;
+      const firstOfNext = mm === 11 ? `${yy + 1}-01-01` : `${yy}-${pad(mm + 2)}-01`;
+      const { data: salesRows } = await supabase
+        .from("sales_reports")
+        .select("gross_sales, report_date")
+        .eq("outlet_id", realOutletRow.id)
+        .gte("report_date", firstOfMonth)
+        .lt("report_date", firstOfNext);
+      const mtdSum = ((salesRows ?? []) as { gross_sales: number }[])
+        .reduce((s, r) => s + Number(r.gross_sales ?? 0), 0);
+      setRealMtd(mtdSum);
+
+      // --- Latest audit (real) ---
+      const { data: auditRows } = await supabase
+        .from("compliance_audits")
+        .select("score, audit_date, auditor")
+        .eq("outlet_id", realOutletRow.id)
+        .order("audit_date", { ascending: false })
+        .limit(1);
+      const a0 = ((auditRows ?? []) as { score: number; audit_date: string; auditor: string }[])[0];
+      if (a0) setRealLatestAudit(a0);
+
+      // --- Training progress for the outlet's franchisee ---
+      // Find the owner's profile via franchisees.id → profiles.franchisee_id,
+      // then count completed modules vs. total modules. Matches exactly what
+      // the franchisee sees on /portal/training.
+      const { data: ownerProfile } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("franchisee_id", realOutletRow.franchisee_id)
+        .eq("role", "franchisee")
+        .maybeSingle();
+      const { data: mods } = await supabase.from("training_modules").select("id");
+      setTrainingTotal(((mods ?? []) as { id: string }[]).length);
+      if (ownerProfile) {
+        const { data: prog } = await supabase
+          .from("training_progress")
+          .select("module_id, completed_at")
+          .eq("user_id", ownerProfile.id);
+        const done = ((prog ?? []) as { module_id: string; completed_at: string | null }[])
+          .filter((p) => !!p.completed_at).length;
+        setTrainingDone(done);
+      }
     })();
   }, [outlet]);
   const sales = useMemo(
@@ -106,26 +168,33 @@ export default function OutletDetailPage() {
     [outlet.id]
   );
 
-  const pct = Math.round((outlet.monthly_actual / outlet.monthly_target) * 100);
+  // Use real numbers where we have them, fall back to the mock seed for
+  // outlets that haven't been migrated to Supabase yet so the UI never blanks.
+  const effectiveMonthActual = realMtd ?? outlet.monthly_actual;
+  const effectiveTarget = realTarget ?? outlet.monthly_target;
+  const effectiveLatestAudit = realLatestAudit ?? latestAudit;
+  const pct = effectiveTarget > 0 ? Math.round((effectiveMonthActual / effectiveTarget) * 100) : 0;
   const latestRoyalty = royalties[0];
   const overdueRoyalty = royalties.some(
     (r) => r.status !== "paid" && !verifiedByRoyalty[r.id] && daysUntil(r.due_date) < 0
   );
 
   const tone: "success" | "warning" | "danger" =
-    overdueRoyalty || (latestAudit && latestAudit.score < 70)
+    overdueRoyalty || (effectiveLatestAudit && effectiveLatestAudit.score < 70)
       ? "danger"
-      : pct >= 90 && latestAudit && latestAudit.score >= 85
+      : pct >= 90 && effectiveLatestAudit && effectiveLatestAudit.score >= 85
       ? "success"
       : "warning";
 
   const trend = sales.slice(0, 30).reverse().map((r) => ({ date: r.report_date, value: r.gross_sales }));
   const mix = syntheticMix(outlet.id);
-  const trainingPct = trainingPctForOutlet(outlet.id);
+  // Real training progress from Supabase (training_modules + training_progress).
+  // Falls back to 0/0 on first paint while fetch is in flight.
+  const trainingPct = trainingTotal > 0 ? Math.round((trainingDone / trainingTotal) * 100) : 0;
 
   const weekTotal = sales.slice(0, 7).reduce((s, r) => s + r.gross_sales, 0);
   const monthTxn  = sales.slice(0, 30).reduce((s, r) => s + r.transactions, 0);
-  const avgTicket = monthTxn > 0 ? outlet.monthly_actual / monthTxn : 0;
+  const avgTicket = monthTxn > 0 ? effectiveMonthActual / monthTxn : 0;
 
   return (
     <div className="space-y-6">
@@ -180,8 +249,8 @@ export default function OutletDetailPage() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi
           label="Month sales"
-          value={RM(outlet.monthly_actual)}
-          sub={`${pct}% of ${RM(outlet.monthly_target)} target`}
+          value={RM(effectiveMonthActual)}
+          sub={`${pct}% of ${RM(effectiveTarget)} target`}
           tone={pct >= 90 ? "success" : pct >= 70 ? "warning" : "danger"}
         />
         <Kpi
@@ -191,15 +260,15 @@ export default function OutletDetailPage() {
         />
         <Kpi
           label="Latest audit"
-          value={latestAudit ? `${latestAudit.score}/100` : "—"}
-          sub={latestAudit ? `${formatDate(latestAudit.audit_date)} · ${latestAudit.auditor}` : "No audit yet"}
-          tone={latestAudit ? (latestAudit.score >= 85 ? "success" : latestAudit.score >= 70 ? "warning" : "danger") : undefined}
+          value={effectiveLatestAudit ? `${effectiveLatestAudit.score}/100` : "—"}
+          sub={effectiveLatestAudit ? `${formatDate(effectiveLatestAudit.audit_date)} · ${effectiveLatestAudit.auditor}` : "No audit yet"}
+          tone={effectiveLatestAudit ? (effectiveLatestAudit.score >= 85 ? "success" : effectiveLatestAudit.score >= 70 ? "warning" : "danger") : undefined}
         />
         <Kpi
           label="Training complete"
-          value={`${trainingPct}%`}
-          sub={`${Math.round((trainingPct / 100) * mockTrainingModules.length)}/${mockTrainingModules.length} modules passed`}
-          tone={trainingPct >= 80 ? "success" : trainingPct >= 60 ? "warning" : "danger"}
+          value={trainingTotal > 0 ? `${trainingPct}%` : "—"}
+          sub={trainingTotal > 0 ? `${trainingDone}/${trainingTotal} modules passed` : "No modules yet"}
+          tone={trainingTotal === 0 ? undefined : trainingPct >= 80 ? "success" : trainingPct >= 60 ? "warning" : "danger"}
         />
       </div>
 
@@ -209,7 +278,7 @@ export default function OutletDetailPage() {
             <CardTitle>
               <span className="inline-flex items-center gap-2"><TrendingUp size={16} className="text-[color:var(--color-brand)]" /> Sales trend · last 30 days</span>
             </CardTitle>
-            <CardSubtitle>Week total {RM(weekTotal)} · Daily average {RM(Math.round(outlet.monthly_actual / 30))}</CardSubtitle>
+            <CardSubtitle>Week total {RM(weekTotal)} · Daily average {RM(Math.round(effectiveMonthActual / 30))}</CardSubtitle>
           </div>
           <Pill tone={tone === "success" ? "success" : tone === "warning" ? "warning" : "danger"}>{pct}% of target</Pill>
         </div>
