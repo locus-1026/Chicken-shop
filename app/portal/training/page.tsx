@@ -185,7 +185,18 @@ function LearningModal({
 
   const submit = () => {
     if (!allAnswered) {
-      toast("error", "Please answer every question before submitting.");
+      // List which question numbers are still unanswered so the user
+      // knows exactly what to fix instead of getting nothing (the button
+      // used to be disabled and swallow the click).
+      const missing = quiz
+        .map((_, i) => (typeof answers[i] === "number" ? null : i + 1))
+        .filter((n): n is number => n !== null);
+      toast(
+        "error",
+        missing.length === 1
+          ? `Question ${missing[0]} isn't answered yet.`
+          : `Still unanswered: Q${missing.join(", Q")}.`
+      );
       return;
     }
     const correct = quiz.filter((q, i) => answers[i] === q.correct).length;
@@ -221,17 +232,38 @@ function LearningModal({
         <div className="flex-1 overflow-y-auto p-5">
           {step === "content" && (
             <div className="space-y-5">
-              <div className="aspect-video w-full rounded-xl bg-[color:var(--color-ink)] flex items-center justify-center text-white">
-                <PlayCircle size={56} />
-                <span className="ml-3 text-sm opacity-70">Video player (demo)</span>
-              </div>
+              {/* Only show the video player if the module actually has a
+                  video source. Previously PDF-only modules (like "Brand
+                  Standards") displayed a Video player which misled
+                  franchisees into expecting a video. */}
+              {module.video_url && (
+                <div className="aspect-video w-full rounded-xl bg-[color:var(--color-ink)] flex items-center justify-center text-white">
+                  <PlayCircle size={56} />
+                  <span className="ml-3 text-sm opacity-70">Video player (demo)</span>
+                </div>
+              )}
               {module.materials_url && (
-                <a
-                  href={module.materials_url}
-                  className="inline-flex items-center gap-2 rounded-full border border-[color:var(--color-border)] bg-white px-4 py-2 text-sm font-medium hover:border-[color:var(--color-brand)]"
-                >
-                  <FileText size={16} /> Download PDF materials
-                </a>
+                <div className="rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-brand-50)]/40 p-4">
+                  <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wider text-[color:var(--color-brand-700)]">
+                    <FileText size={14} /> PDF training pack
+                  </div>
+                  <p className="mt-1.5 text-[13px] text-[color:var(--color-ink-soft)]">
+                    Read through the materials, then start the quiz when ready.
+                  </p>
+                  <a
+                    href={module.materials_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-3 inline-flex items-center gap-2 rounded-full border border-[color:var(--color-border)] bg-white px-4 py-2 text-sm font-medium hover:border-[color:var(--color-brand)]"
+                  >
+                    <FileText size={16} /> Download PDF materials
+                  </a>
+                </div>
+              )}
+              {!module.video_url && !module.materials_url && (
+                <div className="rounded-xl border border-dashed border-[color:var(--color-border)] bg-white p-6 text-center text-[13px] text-[color:var(--color-ink-soft)]">
+                  No media yet — jump straight to the quiz when ready.
+                </div>
               )}
             </div>
           )}
@@ -278,8 +310,10 @@ function LearningModal({
 
         <div className="flex items-center justify-end gap-2 border-t border-[color:var(--color-border)] p-4">
           {step === "content" && <Button onClick={() => setStep("quiz")}>Start quiz →</Button>}
+          {/* Button stays clickable even when not all answered so the
+              click handler can surface which questions are missing. */}
           {step === "quiz" && (
-            <Button onClick={submit} disabled={!allAnswered} className={allAnswered ? "" : "opacity-50 cursor-not-allowed"}>
+            <Button onClick={submit} className={allAnswered ? "" : "opacity-60"}>
               Submit answers
             </Button>
           )}

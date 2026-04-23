@@ -75,15 +75,25 @@ export default function AdminAnnouncementsPage() {
   const exec = (cmd: string) => document.execCommand(cmd, false);
 
   const publish = async () => {
-    const body = bodyRef.current?.innerHTML ?? "";
-    if (!title.trim()) {
+    const rawBody = bodyRef.current?.innerHTML ?? "";
+    const plainBody = rawBody.replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").trim();
+    const trimmedTitle = title.trim();
+    // Combined guard so the admin gets one clear error if both are empty
+    // (previously only the title error surfaced; if the toast was missed
+    // the click felt like a no-op).
+    if (!trimmedTitle && !plainBody) {
+      toast("error", "Give the announcement a title and body before publishing.");
+      return;
+    }
+    if (!trimmedTitle) {
       toast("error", "Please give the announcement a title.");
       return;
     }
-    if (!body.replace(/<[^>]+>/g, "").trim()) {
+    if (!plainBody) {
       toast("error", "Please write the announcement body.");
       return;
     }
+    const body = rawBody;
     const { error } = await supabase.from("announcements").insert({
       title,
       body,

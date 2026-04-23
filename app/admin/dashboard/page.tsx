@@ -159,12 +159,11 @@ export default function AdminDashboard() {
       .sort((a, b) => (a.period < b.period ? 1 : -1))[0];
     const pct = realTarget > 0 ? (realMtd / realTarget) * 100 : 0;
     const overdue = latestRoyalty ? isOverdue(latestRoyalty) : false;
-    // Red (danger) = any hard-fail: overdue royalty, audit <70, OR sales <70%.
-    //                Sales that low is "can't make it without intervention".
-    // Green (success) = sales ≥90% AND audit ≥85 AND no overdue royalty.
-    // Amber (warning) = everything in between (incl. "no audit yet").
+    // Matches the legend on the card: red = audit <70 OR overdue royalty;
+    // green = sales ≥90 AND audit ≥85 AND no overdue royalty; amber =
+    // anything in between (incl. low sales but no hard-fail).
     let tone: "success" | "warning" | "danger";
-    if (overdue || (latest && latest.score < 70) || pct < 70) tone = "danger";
+    if (overdue || (latest && latest.score < 70)) tone = "danger";
     else if (pct >= 90 && latest && latest.score >= 85) tone = "success";
     else tone = "warning";
     // Expose real numbers so the cards below display the same RM values

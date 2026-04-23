@@ -85,6 +85,21 @@ export default function SuppliesPage() {
       toast("error", "Add at least one item to your order.");
       return;
     }
+    // Gate: any item ordered below its `min` is a hard fail — HQ shouldn't
+    // have to manually reject these. Tell the franchisee which items.
+    const belowMin = catalog.filter(
+      (c) => (qty[c.id] ?? 0) > 0 && c.min > 0 && (qty[c.id] ?? 0) < c.min
+    );
+    if (belowMin.length > 0) {
+      const first = belowMin[0];
+      toast(
+        "error",
+        belowMin.length === 1
+          ? `${first.name}: minimum order is ${first.min}. Increase the quantity to continue.`
+          : `${belowMin.length} items are below their minimum order quantity. Check the red notes and increase them.`
+      );
+      return;
+    }
     const items = catalog
       .filter((c) => (qty[c.id] ?? 0) > 0)
       .map((c) => ({ sku: c.id, name: c.name, unit: c.unit, qty: qty[c.id], unit_price: c.price }));
@@ -165,7 +180,17 @@ export default function SuppliesPage() {
                       <div className="flex-1">
                         <div className="font-semibold">{item.name}</div>
                         <div className="text-[12px] text-[color:var(--color-ink-soft)]">{item.unit} · RM {item.price}</div>
-                        {item.min > 0 && <div className="text-[11px] text-[color:var(--color-warning)] mt-1">Min order {item.min}</div>}
+                        {item.min > 0 && (
+                          (() => {
+                            const current = qty[item.id] ?? 0;
+                            const isBelow = current > 0 && current < item.min;
+                            return (
+                              <div className={"text-[11px] mt-1 " + (isBelow ? "font-semibold text-[color:var(--color-danger)]" : "text-[color:var(--color-warning)]")}>
+                                {isBelow ? `Below minimum — need ${item.min - current} more` : `Min order ${item.min}`}
+                              </div>
+                            );
+                          })()
+                        )}
                       </div>
                       <div className="flex items-center gap-1">
                         <button

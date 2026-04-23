@@ -139,9 +139,13 @@ export default function PortalHome() {
         <StaggerItem>
           <Link href="/portal/royalty" className="block">
           <Card className="transition-all hover:-translate-y-0.5 hover:border-[color:var(--color-brand-200)] hover:shadow-[0_12px_28px_-14px_rgba(45,26,14,0.25)] cursor-pointer">
-            <CardTitle>Royalty this month</CardTitle>
+            <CardTitle>Latest royalty statement</CardTitle>
             {royalty ? (
               <>
+                {/* The latest statement may be last month's (e.g. April
+                    currently open, March's statement is the newest one HQ
+                    generated). Naming this "Latest" rather than "this month"
+                    avoids the mislabel when no current-month row exists yet. */}
                 <CardSubtitle>{formatDate(royalty.period)}</CardSubtitle>
                 <div className="mt-3 flex items-end justify-between">
                   <div>
@@ -156,10 +160,19 @@ export default function PortalHome() {
                   </Pill>
                 </div>
                 <div className="mt-4 text-[12px] text-[color:var(--color-ink-soft)]">
-                  Due {formatDate(royalty.due_date)} ·{" "}
-                  {daysUntil(royalty.due_date) >= 0
-                    ? `${daysUntil(royalty.due_date)} days left`
-                    : `${Math.abs(daysUntil(royalty.due_date))} days overdue`}
+                  Due {formatDate(royalty.due_date)}
+                  {/* Once paid, don't keep counting days "overdue" — the
+                      statement is closed. Only surface the countdown when
+                      it's still outstanding. */}
+                  {royaltyStatus !== "paid" && (
+                    <>
+                      {" · "}
+                      {daysUntil(royalty.due_date) >= 0
+                        ? `${daysUntil(royalty.due_date)} days left`
+                        : `${Math.abs(daysUntil(royalty.due_date))} days overdue`}
+                    </>
+                  )}
+                  {royaltyStatus === "paid" && " · settled"}
                 </div>
               </>
             ) : (

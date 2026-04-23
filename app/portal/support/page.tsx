@@ -101,7 +101,8 @@ export default function SupportPage() {
   };
 
   const postReply = async () => {
-    if (!openTicketId || !reply.trim()) return;
+    if (!openTicketId) return;
+    if (!reply.trim()) { toast("error", "Write a reply first."); return; }
     const { error } = await supabase.from("ticket_messages").insert({
       ticket_id: openTicketId,
       author: "franchisee",
@@ -346,7 +347,7 @@ function TicketThread({
             <Paperclip size={14} /> Attach photo
             <input type="file" className="hidden" />
           </label>
-          <Button onClick={onPostReply} disabled={!reply.trim()}>
+          <Button onClick={onPostReply} className={reply.trim() ? "" : "opacity-60"}>
             <Send size={14} /> Send reply
           </Button>
         </div>

@@ -280,8 +280,10 @@ export default function SalesPage() {
                 <div className="text-[12px] text-[color:var(--color-ink-soft)]">Drinks as a % of gross. Food = the rest.</div>
               </div>
               <div className="text-right">
-                <div className="text-lg font-semibold">{beveragePct}%</div>
-                <div className="text-[11px] text-[color:var(--color-ink-soft)]">Food {100 - beveragePct}%</div>
+                {/* Defensive — if state ever becomes NaN (e.g. applied from
+                    a mix-average when no reports existed) fall back to 0. */}
+                <div className="text-lg font-semibold">{Number.isFinite(beveragePct) ? beveragePct : 0}%</div>
+                <div className="text-[11px] text-[color:var(--color-ink-soft)]">Food {Number.isFinite(beveragePct) ? 100 - beveragePct : 100}%</div>
               </div>
             </div>
             <input

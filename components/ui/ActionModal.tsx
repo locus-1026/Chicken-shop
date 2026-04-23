@@ -25,10 +25,14 @@ export function ActionModal({
 }) {
   const isCoach = kind === "coach";
   const [when, setWhen] = useState(() => {
+    // datetime-local inputs expect LOCAL time. toISOString gave UTC which
+    // in GMT+8 turned a default of 10am into 02:00 AM in the picker. Build
+    // the string by hand so what the admin picked is what gets saved.
     const d = new Date();
     d.setDate(d.getDate() + 2);
     d.setHours(10, 0, 0, 0);
-    return d.toISOString().slice(0, 16);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   });
   const defaultNote = isCoach
     ? `Hi ${ownerName.split(" ")[0]}, noticing ${subjectCode} tracking below target. Let's jump on a 30-min call to walk through operations and marketing support.`

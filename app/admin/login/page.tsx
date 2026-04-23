@@ -21,6 +21,9 @@ export default function AdminLoginPage() {
   const [attempts, setAttempts] = useState(0);
   const [shake, setShake] = useState(0);
   const [busy, setBusy] = useState(false);
+  // Persistent inline error — toasts auto-dismiss, so on a wrong password
+  // the user may only see it for 3s. Keep an always-visible message too.
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const lockUntil = useRef<number>(0);
 
   useEffect(() => {
@@ -28,14 +31,19 @@ export default function AdminLoginPage() {
   }, [ready, session, profile, router]);
 
   const submit = async () => {
+    setErrorMsg(null);
     if (Date.now() < lockUntil.current) {
       const secs = Math.ceil((lockUntil.current - Date.now()) / 1000);
-      toast("error", `Too many attempts. Try again in ${secs}s.`);
+      const msg = `Too many attempts. Try again in ${secs}s.`;
+      setErrorMsg(msg);
+      toast("error", msg);
       return;
     }
     const e = email.trim().toLowerCase();
     if (!e || !password) {
-      toast("error", "Email and password required.");
+      const msg = "Email and password are required.";
+      setErrorMsg(msg);
+      toast("error", msg);
       return;
     }
     setBusy(true);
@@ -47,9 +55,13 @@ export default function AdminLoginPage() {
       setAttempts(next);
       if (next >= 5) {
         lockUntil.current = Date.now() + 30_000;
-        toast("error", "Too many failed attempts. Locked for 30s.");
+        const msg = "Too many failed attempts. Locked for 30 seconds.";
+        setErrorMsg(msg);
+        toast("error", msg);
       } else {
-        toast("error", `Wrong credentials. ${5 - next} attempt(s) left.`);
+        const msg = `Incorrect email or password. ${5 - next} attempt${5 - next === 1 ? "" : "s"} left.`;
+        setErrorMsg(msg);
+        toast("error", msg);
       }
       return;
     }
@@ -128,6 +140,15 @@ export default function AdminLoginPage() {
                 </button>
               </div>
             </label>
+
+            {errorMsg && (
+              <div
+                role="alert"
+                className="rounded-xl border border-red-400/40 bg-red-500/15 px-3 py-2.5 text-[12px] font-medium text-red-100"
+              >
+                {errorMsg}
+              </div>
+            )}
 
             <Button onClick={submit} size="lg" className="w-full" disabled={busy}>
               {busy ? "Signing in…" : "Sign in to HQ"}

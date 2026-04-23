@@ -231,11 +231,7 @@ export default function RoyaltyPage() {
                   <td className="px-4 py-3">{formatDate(r.due_date)}</td>
                   <td className="px-4 py-3">
                     <StatusPill status={st} />
-                    {proof && (
-                      <div className="mt-1 text-[11px] text-[color:var(--color-ink-soft)]">
-                        <FileText size={10} className="inline -mt-0.5" /> {proof.file_name}
-                      </div>
-                    )}
+                    {proof && <ProofPreview proof={proof} />}
                     {proof?.rejected_at && (
                       <div className="mt-1 text-[11px] text-[color:var(--color-danger)]">
                         Rejected: {proof.rejected_reason ?? "please re-upload"}
@@ -375,6 +371,63 @@ function UploadProofModal({
             <Upload size={14} /> {busy ? "Uploading…" : "Submit proof"}
           </Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Renders the uploaded proof as a real thumbnail when it's an image, or
+// a small clickable filename pill otherwise. Was previously just the raw
+// filename as plain text, which looked like a broken <img>.
+function ProofPreview({ proof }: { proof: Proof }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!proof.file_url) { setUrl(null); return; }
+    const supabase = createSupabaseBrowserClient();
+    let active = true;
+    (async () => {
+      const { data } = await supabase.storage
+        .from("royalty-proofs")
+        .createSignedUrl(proof.file_url!, 60 * 10); // 10-min view window
+      if (active) setUrl(data?.signedUrl ?? null);
+    })();
+    return () => { active = false; };
+  }, [proof.file_url]);
+
+  const isImage = /\.(png|jpe?g|gif|webp|heic)$/i.test(proof.file_name);
+
+  return (
+    <div className="mt-1.5 flex items-center gap-2">
+      {isImage && url ? (
+        <a href={url} target="_blank" rel="noreferrer" className="shrink-0">
+          <img
+            src={url}
+            alt={proof.file_name}
+            className="h-10 w-10 rounded-md border border-[color:var(--color-border)] object-cover"
+          />
+        </a>
+      ) : (
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[color:var(--color-border)] bg-[color:var(--color-brand-50)] text-[color:var(--color-brand-700)]">
+          <FileText size={14} />
+        </div>
+      )}
+      <div className="min-w-0">
+        {url ? (
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="block truncate text-[11px] font-medium text-[color:var(--color-brand-700)] hover:underline"
+            title={proof.file_name}
+          >
+            {proof.file_name}
+          </a>
+        ) : (
+          <div className="truncate text-[11px] text-[color:var(--color-ink-soft)]" title={proof.file_name}>
+            {proof.file_name}
+          </div>
+        )}
+        <div className="text-[10px] text-[color:var(--color-ink-soft)]">Ref {proof.bank_reference}</div>
       </div>
     </div>
   );

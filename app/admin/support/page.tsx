@@ -102,7 +102,11 @@ export default function AdminSupportPage() {
   }, [tickets]);
 
   const postReply = async () => {
-    if (!openId || !reply.trim() || !profile) return;
+    if (!openId || !profile) return;
+    if (!reply.trim()) {
+      toast("error", "Write a reply first — empty replies can't be sent.");
+      return;
+    }
     setPosting(true);
     try {
       const { error: msgErr } = await supabase.from("ticket_messages").insert({
@@ -261,7 +265,10 @@ export default function AdminSupportPage() {
             className="mt-3 w-full rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2.5 text-sm focus:border-[color:var(--color-brand)] focus:outline-none"
           />
           <div className="mt-3 flex items-center justify-end">
-            <Button onClick={postReply} disabled={!reply.trim() || posting}>
+            {/* Button stays clickable so postReply can toast when the
+                reply is empty — disabled buttons swallow the click and
+                make it look broken. */}
+            <Button onClick={postReply} disabled={posting} className={reply.trim() ? "" : "opacity-60"}>
               <Send size={14} /> {posting ? "Sending…" : "Send reply"}
             </Button>
           </div>
