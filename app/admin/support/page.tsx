@@ -76,6 +76,10 @@ export default function AdminSupportPage() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+    // Rank: open (needs first reply) → in_progress → resolved. So HQ's
+    // eye always lands on what still needs action.
+    const rank = (s: SupportTicket["status"]) =>
+      s === "open" ? 0 : s === "in_progress" ? 1 : 2;
     return tickets
       .filter((t) => (filter === "all" ? true : t.status === filter))
       .filter((t) => {
@@ -89,6 +93,12 @@ export default function AdminSupportPage() {
           (o?.location ?? "").toLowerCase().includes(q) ||
           (f?.owner_name ?? "").toLowerCase().includes(q)
         );
+      })
+      .sort((a, b) => {
+        const d = rank(a.status) - rank(b.status);
+        if (d !== 0) return d;
+        // Within the same status, newest first.
+        return a.created_at < b.created_at ? 1 : -1;
       });
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [tickets, filter, query, outlets, franchisees]);
@@ -345,6 +355,16 @@ export default function AdminSupportPage() {
               const isNew = latestFrTs > seen && t.status !== "resolved";
               const o = outletFor(t.outlet_id);
               const f = franchiseeFor(t.outlet_id);
+              // Visual pecking order at a glance: open = red bar,
+              // in_progress = amber bar, resolved = thin neutral bar +
+              // dimmed text so unresolved work always looks "louder".
+              const borderLeft =
+                t.status === "open"
+                  ? "border-l-4 border-[color:var(--color-danger)]"
+                  : t.status === "in_progress"
+                  ? "border-l-4 border-[color:var(--color-warning)]"
+                  : "border-l-4 border-transparent";
+              const resolvedDim = t.status === "resolved" ? "opacity-60" : "";
               return (
                 <li key={t.id}>
                   <button
@@ -356,6 +376,7 @@ export default function AdminSupportPage() {
                     }}
                     className={
                       "flex w-full items-start justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-[color:var(--color-brand-50)]/40 " +
+                      borderLeft + " " + resolvedDim + " " +
                       (isNew ? "bg-[color:var(--color-brand-50)]/40" : "")
                     }
                   >
@@ -382,8 +403,8 @@ export default function AdminSupportPage() {
                         {formatDate(t.created_at)} · {msgs.length} message{msgs.length !== 1 ? "s" : ""}
                       </div>
                     </div>
-                    <Pill tone={t.status === "resolved" ? "success" : t.status === "open" ? "warning" : "brand"}>
-                      {t.status.replace("_", " ")}
+                    <Pill tone={t.status === "resolved" ? "success" : t.status === "open" ? "danger" : "warning"}>
+                      {t.status === "resolved" ? "✓ resolved" : t.status === "open" ? "! open" : "in progress"}
                     </Pill>
                   </button>
                 </li>
