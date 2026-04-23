@@ -10,7 +10,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/Toast";
 import { formatDate } from "@/lib/utils";
 import type { SupportTicket, TicketMessage } from "@/lib/types";
-import { Paperclip, Send, ArrowLeft, ShieldCheck, User, Clock } from "lucide-react";
+import { Paperclip, Send, ArrowLeft, ShieldCheck, User, Clock, BellRing } from "lucide-react";
 
 const categories = ["IT / POS", "Supply Chain", "Marketing", "HR / Staffing", "Facility", "Other"];
 
@@ -125,6 +125,32 @@ export default function SupportPage() {
     ? messages.filter((m) => m.ticket_id === openTicket.id).sort((a, b) => (a.created_at < b.created_at ? -1 : 1))
     : [];
 
+  // Franchisee nudge — posts a highlighted "nudge" message to the thread
+  // so HQ sees it in the admin inbox. Rate-limited via localStorage so a
+  // frustrated franchisee doesn't spam admin with 20 nudges in a row.
+  const nudgeHq = async () => {
+    if (!openTicketId) return;
+    const key = "cc.portal.ticket-nudge." + openTicketId;
+    const last = typeof window !== "undefined" ? window.localStorage.getItem(key) : null;
+    if (last && Date.now() - new Date(last).getTime() < 2 * 60 * 60 * 1000) {
+      const mins = Math.ceil((2 * 60 * 60 * 1000 - (Date.now() - new Date(last).getTime())) / 60_000);
+      toast("info", `Already nudged HQ. You can nudge again in ~${mins} min.`);
+      return;
+    }
+    const { error } = await supabase.from("ticket_messages").insert({
+      ticket_id: openTicketId,
+      author: "franchisee",
+      author_name: franchisee.owner_name,
+      body: "🔔 Nudge — still waiting on HQ. Please take a look when you can.",
+    });
+    if (error) { toast("error", `Nudge failed: ${error.message}`); return; }
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(key, new Date().toISOString());
+    }
+    await load();
+    toast("success", "HQ has been nudged.");
+  };
+
   // Thread view takes over the page when a ticket is selected.
   if (openTicket) {
     return (
@@ -134,6 +160,7 @@ export default function SupportPage() {
         reply={reply}
         onReplyChange={setReply}
         onPostReply={postReply}
+        onNudgeHq={nudgeHq}
         onBack={() => { setOpenTicketId(null); setReply(""); }}
       />
     );
@@ -257,15 +284,48 @@ export default function SupportPage() {
 }
 
 function TicketThread({
-  ticket, messages, reply, onReplyChange, onPostReply, onBack,
+  ticket, messages, reply, onReplyChange, onPostReply, onNudgeHq, onBack,
 }: {
   ticket: SupportTicket;
   messages: TicketMessage[];
   reply: string;
   onReplyChange: (v: string) => void;
   onPostReply: () => void;
+  onNudgeHq: () => void;
   onBack: () => void;
 }) {
+  // Figure out whether we're "waiting on HQ" — the latest message is from
+  // the franchisee (or there are no messages yet after they opened it)
+  // AND the ticket isn't resolved. Drives the waiting banner + nudge
+  // button so HQ slippage becomes visible instead of silent.
+  const latest = messages[messages.length - 1];
+  const lastFranchiseeTs = latest && latest.author === "franchisee"
+    ? latest.created_at
+    : ticket.status !== "resolved" && messages.length === 0
+    ? ticket.created_at
+    : null;
+  const awaitingHq = !!lastFranchiseeTs && ticket.status !== "resolved";
+  const waitingMs = lastFranchiseeTs ? Date.now() - new Date(lastFranchiseeTs).getTime() : 0;
+  const waitingHours = Math.floor(waitingMs / (60 * 60 * 1000));
+  const waitingDays = Math.floor(waitingHours / 24);
+  const waitedLabel = waitingDays >= 1
+    ? `${waitingDays} day${waitingDays === 1 ? "" : "s"}`
+    : waitingHours >= 1
+    ? `${waitingHours} hour${waitingHours === 1 ? "" : "s"}`
+    : "less than an hour";
+  // Only offer the nudge button when HQ has been silent for a meaningful
+  // window — not right after the franchisee just posted.
+  const canNudge = awaitingHq && waitingHours >= 4;
+  // Tone escalates the longer HQ is silent.
+  const bannerTone =
+    waitingDays >= 2 ? "danger" : waitingHours >= 8 ? "warning" : "info";
+  const bannerClasses =
+    bannerTone === "danger"
+      ? "border-[color:var(--color-danger)] bg-[color:var(--color-danger-soft)] text-[color:var(--color-danger)]"
+      : bannerTone === "warning"
+      ? "border-[color:var(--color-warning)] bg-[color:var(--color-warning-soft)] text-[color:var(--color-warning)]"
+      : "border-[color:var(--color-brand-200)] bg-[color:var(--color-brand-50)] text-[color:var(--color-brand-700)]";
+
   return (
     <div className="space-y-4">
       <button
@@ -291,6 +351,31 @@ function TicketThread({
           </div>
         </div>
       </Card>
+
+      {awaitingHq && (
+        <div className={"flex flex-col gap-2 rounded-[14px] border px-4 py-3 sm:flex-row sm:items-center sm:justify-between " + bannerClasses}>
+          <div className="flex items-start gap-2">
+            <Clock size={16} className="mt-0.5 shrink-0" />
+            <div className="text-[13px]">
+              <div className="font-semibold">
+                Waiting on HQ · {waitedLabel}
+              </div>
+              <div className="opacity-80">
+                {waitingDays >= 2
+                  ? "HQ is overdue on this. Tap Nudge HQ to ping them again."
+                  : waitingHours >= 4
+                  ? "No reply yet — you can nudge HQ from here."
+                  : "HQ usually responds within a business day."}
+              </div>
+            </div>
+          </div>
+          {canNudge && (
+            <Button size="sm" variant="outline" onClick={onNudgeHq}>
+              <BellRing size={14} /> Nudge HQ
+            </Button>
+          )}
+        </div>
+      )}
 
       <Card className="!p-0">
         <ul className="divide-y divide-[color:var(--color-border)]">
