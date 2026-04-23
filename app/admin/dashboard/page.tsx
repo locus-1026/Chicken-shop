@@ -48,7 +48,12 @@ export default function AdminDashboard() {
     }
     const supabase = createSupabaseBrowserClient();
     const loadAll = async () => {
-      const monthPrefix = new Date().toISOString().slice(0, 7); // "2026-04"
+      // Build safe month bounds. Avoid '-31' strings (April has no 31st,
+      // Supabase rejects the cast and returns 0 rows — that was the
+      // 'RM 0' bug on the dashboard KPI).
+      const now = new Date();
+      const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+      const firstOfNext = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10);
       const [{ data: roys }, { data: fs }, { data: profs }, { data: notifs }, { data: outs }, { data: mtdRows }] = await Promise.all([
         supabase
           .from("royalties")
@@ -65,8 +70,8 @@ export default function AdminDashboard() {
         supabase
           .from("sales_reports")
           .select("outlet_id, gross_sales")
-          .gte("report_date", `${monthPrefix}-01`)
-          .lte("report_date", `${monthPrefix}-31`),
+          .gte("report_date", firstOfMonth)
+          .lt("report_date", firstOfNext),
       ]);
       const mtd: Record<string, number> = {};
       for (const r of ((mtdRows ?? []) as { outlet_id: string; gross_sales: number }[])) {

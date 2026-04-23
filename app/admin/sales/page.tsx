@@ -22,6 +22,8 @@ import {
   ShoppingBag,
   Bike,
   CalendarDays,
+  Pencil,
+  X as XIcon,
 } from "lucide-react";
 
 function channelTop(mix: SalesReport["channel_mix"]) {
@@ -39,6 +41,7 @@ export default function AdminSalesPage() {
   const [allReports, setAllReports] = useState<SalesReport[]>([]);
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [franchisees, setFranchisees] = useState<Franchisee[]>([]);
+  const [editingTargets, setEditingTargets] = useState<Outlet | null>(null);
 
   // Pull every sales report across every outlet (RLS allows admin to see all).
   useEffect(() => {
@@ -275,11 +278,22 @@ export default function AdminSalesPage() {
               tone === "success" ? "bg-[color:var(--color-success-soft)] text-[color:var(--color-success)]"
               : tone === "warning" ? "bg-[color:var(--color-warning-soft)] text-[color:var(--color-warning)]"
               : "bg-[color:var(--color-danger-soft)] text-[color:var(--color-danger)]";
+            const dailyTarget = r.outlet.daily_target ?? (r.target ? Math.round(r.target / monthly.daysInMonth) : 0);
             return (
               <div key={r.outlet.id} className="rounded-[12px] border border-[color:var(--color-border)] bg-white p-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="truncate">
-                    <div className="text-[13px] font-semibold">{r.outlet.outlet_code}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[13px] font-semibold">{r.outlet.outlet_code}</span>
+                      <button
+                        onClick={() => setEditingTargets(r.outlet)}
+                        className="text-[color:var(--color-ink-soft)] hover:text-[color:var(--color-brand-700)]"
+                        aria-label={`Edit targets for ${r.outlet.outlet_code}`}
+                        title="Edit monthly & daily targets"
+                      >
+                        <Pencil size={11} />
+                      </button>
+                    </div>
                     <div className="truncate text-[11px] text-[color:var(--color-ink-soft)]">{r.outlet.location}</div>
                   </div>
                   <span className={"inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-semibold " + pctChipColor}>
@@ -295,6 +309,10 @@ export default function AdminSalesPage() {
                 </div>
                 <div className="mt-1.5 text-[11px] text-[color:var(--color-ink-soft)]">
                   On pace for {RM(r.projected)} · {r.pace}% of target
+                </div>
+                <div className="mt-0.5 text-[11px] text-[color:var(--color-ink-soft)]">
+                  Daily target: {RM(dailyTarget)}
+                  {!r.outlet.daily_target && <span className="opacity-60"> (auto)</span>}
                 </div>
               </div>
             );
@@ -483,6 +501,120 @@ export default function AdminSalesPage() {
           </ul>
         </Card>
       )}
+
+      {editingTargets && (
+        <TargetEditor
+          outlet={editingTargets}
+          daysInMonth={monthly.daysInMonth}
+          onClose={() => setEditingTargets(null)}
+          onSaved={(updated) => {
+            setOutlets((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+            setEditingTargets(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function TargetEditor({
+  outlet, daysInMonth, onClose, onSaved,
+}: {
+  outlet: Outlet;
+  daysInMonth: number;
+  onClose: () => void;
+  onSaved: (o: Outlet) => void;
+}) {
+  const toast = useToast();
+  const [monthlyT, setMonthlyT] = useState<number>(outlet.monthly_target ?? 0);
+  const [dailyT, setDailyT] = useState<string>(
+    outlet.daily_target != null ? String(outlet.daily_target) : ""
+  );
+  const [busy, setBusy] = useState(false);
+
+  const autoDaily = monthlyT ? Math.round(monthlyT / daysInMonth) : 0;
+  const effectiveDaily = dailyT === "" ? autoDaily : Number(dailyT);
+
+  const save = async () => {
+    if (monthlyT < 0 || isNaN(monthlyT)) { toast("error", "Monthly target must be a positive number."); return; }
+    if (dailyT !== "" && (isNaN(Number(dailyT)) || Number(dailyT) < 0)) { toast("error", "Daily target must be a positive number, or leave blank for auto."); return; }
+    setBusy(true);
+    const supabase = createSupabaseBrowserClient();
+    const patch = {
+      monthly_target: monthlyT,
+      daily_target: dailyT === "" ? null : Number(dailyT),
+    };
+    const { data, error } = await supabase
+      .from("outlets")
+      .update(patch)
+      .eq("id", outlet.id)
+      .select("*")
+      .single();
+    setBusy(false);
+    if (error) { toast("error", `Save failed: ${error.message}`); return; }
+    toast("success", `Targets updated for ${outlet.outlet_code}.`);
+    onSaved((data ?? { ...outlet, ...patch }) as Outlet);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md overflow-hidden rounded-[20px] bg-white shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-[color:var(--color-border)] p-5">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-[color:var(--color-brand-700)]">Edit targets</div>
+            <h2 className="mt-0.5 text-lg font-semibold">{outlet.outlet_code}</h2>
+            <div className="text-[12px] text-[color:var(--color-ink-soft)]">{outlet.location}</div>
+          </div>
+          <button onClick={onClose} className="rounded-full p-1.5 text-[color:var(--color-ink-soft)] hover:bg-[color:var(--color-brand-50)] hover:text-[color:var(--color-brand-700)]" aria-label="Close">
+            <XIcon size={18} />
+          </button>
+        </div>
+
+        <div className="space-y-4 p-5">
+          <label className="block">
+            <span className="text-[12px] font-medium text-[color:var(--color-ink-soft)]">Monthly target (RM)</span>
+            <input
+              type="number"
+              min={0}
+              step={1000}
+              value={monthlyT}
+              onChange={(e) => setMonthlyT(Number(e.target.value))}
+              className="mt-1 w-full rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2 text-[14px]"
+            />
+          </label>
+          <label className="block">
+            <span className="text-[12px] font-medium text-[color:var(--color-ink-soft)]">
+              Daily target (RM) <span className="font-normal text-[color:var(--color-ink-soft)]">· leave blank to auto-calc ({RM(autoDaily)})</span>
+            </span>
+            <input
+              type="number"
+              min={0}
+              step={100}
+              value={dailyT}
+              onChange={(e) => setDailyT(e.target.value)}
+              placeholder={String(autoDaily)}
+              className="mt-1 w-full rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2 text-[14px]"
+            />
+          </label>
+          <div className="rounded-[12px] bg-[color:var(--color-brand-50)] p-3 text-[12px]">
+            <div className="font-semibold text-[color:var(--color-brand-700)]">Preview</div>
+            <div className="mt-1 text-[color:var(--color-ink)]">
+              Monthly: <b>{RM(monthlyT)}</b> · Daily: <b>{RM(effectiveDaily)}</b>
+              {dailyT === "" && <span className="text-[color:var(--color-ink-soft)]"> (auto from monthly ÷ {daysInMonth})</span>}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-[color:var(--color-border)] p-4">
+          <Button size="sm" variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button size="sm" onClick={save} disabled={busy}>
+            <Check size={14} /> Save targets
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

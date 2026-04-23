@@ -31,6 +31,7 @@ export interface Outlet {
   opening_date: string;
   monthly_target: number;
   monthly_actual: number;
+  daily_target?: number | null;
 }
 
 export interface Royalty {
