@@ -21,6 +21,7 @@ import {
   Utensils,
   ShoppingBag,
   Bike,
+  CalendarDays,
 } from "lucide-react";
 
 function channelTop(mix: SalesReport["channel_mix"]) {
@@ -105,6 +106,30 @@ export default function AdminSalesPage() {
   const missing = perOutlet.filter((p) => !p.todays);
   const totalToday = perOutlet.reduce((s, p) => s + (p.todays?.gross_sales ?? 0), 0);
   const txnToday = perOutlet.reduce((s, p) => s + (p.todays?.transactions ?? 0), 0);
+
+  // Month-to-date summary — brief glance at how each outlet is pacing against
+  // their monthly target. Shown below today's numbers.
+  const monthly = useMemo(() => {
+    const now = new Date();
+    const monthPrefix = now.toISOString().slice(0, 7); // "2026-04"
+    const monthLabel = now.toLocaleDateString("en-MY", { month: "long", year: "numeric" });
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const daysElapsed = now.getDate();
+    const rows = outlets.map((o) => {
+      const mtd = allReports
+        .filter((r) => r.outlet_id === o.id && r.report_date.startsWith(monthPrefix))
+        .reduce((s, r) => s + r.gross_sales, 0);
+      const target = o.monthly_target || 0;
+      const pct = target ? Math.round((mtd / target) * 100) : 0;
+      const projected = daysElapsed > 0 ? Math.round((mtd / daysElapsed) * daysInMonth) : 0;
+      const pace = target ? Math.round((projected / target) * 100) : 0;
+      return { outlet: o, mtd, target, pct, projected, pace };
+    }).sort((a, b) => b.pct - a.pct);
+    const groupMtd = rows.reduce((s, r) => s + r.mtd, 0);
+    const groupTarget = rows.reduce((s, r) => s + r.target, 0);
+    const groupPct = groupTarget ? Math.round((groupMtd / groupTarget) * 100) : 0;
+    return { rows, groupMtd, groupTarget, groupPct, monthLabel, daysElapsed, daysInMonth };
+  }, [outlets, allReports]);
 
   // Recent submissions across every outlet.
   const recentRows = useMemo(() => {
@@ -204,6 +229,78 @@ export default function AdminSalesPage() {
           tone={missing.length === 0 ? "success" : missing.length > 2 ? "danger" : "warning"}
         />
       </div>
+
+      {/* Month-to-date summary — quick pacing snapshot alongside today's numbers */}
+      <Card>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div>
+            <CardTitle>
+              <span className="inline-flex items-center gap-2">
+                <CalendarDays size={16} className="text-[color:var(--color-brand)]" />
+                {monthly.monthLabel} — month to date
+              </span>
+            </CardTitle>
+            <CardSubtitle>
+              Day {monthly.daysElapsed} of {monthly.daysInMonth} · Group pacing {monthly.groupPct}% of {RM(monthly.groupTarget)} target
+            </CardSubtitle>
+          </div>
+          <div className="flex items-baseline gap-3">
+            <div className="text-[22px] font-bold">{RM(monthly.groupMtd)}</div>
+            <span
+              className={
+                "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold " +
+                (monthly.groupPct >= 90
+                  ? "bg-[color:var(--color-success-soft)] text-[color:var(--color-success)]"
+                  : monthly.groupPct >= 70
+                  ? "bg-[color:var(--color-warning-soft)] text-[color:var(--color-warning)]"
+                  : "bg-[color:var(--color-danger-soft)] text-[color:var(--color-danger)]")
+              }
+            >
+              {monthly.groupPct}%
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {monthly.rows.map((r) => {
+            const tone =
+              r.pct >= 90 ? "success"
+              : r.pct >= 70 ? "warning"
+              : "danger";
+            const barColor =
+              tone === "success" ? "bg-[color:var(--color-success)]"
+              : tone === "warning" ? "bg-[color:var(--color-warning)]"
+              : "bg-[color:var(--color-danger)]";
+            const pctChipColor =
+              tone === "success" ? "bg-[color:var(--color-success-soft)] text-[color:var(--color-success)]"
+              : tone === "warning" ? "bg-[color:var(--color-warning-soft)] text-[color:var(--color-warning)]"
+              : "bg-[color:var(--color-danger-soft)] text-[color:var(--color-danger)]";
+            return (
+              <div key={r.outlet.id} className="rounded-[12px] border border-[color:var(--color-border)] bg-white p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="truncate">
+                    <div className="text-[13px] font-semibold">{r.outlet.outlet_code}</div>
+                    <div className="truncate text-[11px] text-[color:var(--color-ink-soft)]">{r.outlet.location}</div>
+                  </div>
+                  <span className={"inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-semibold " + pctChipColor}>
+                    {r.pct}%
+                  </span>
+                </div>
+                <div className="mt-2 flex items-baseline justify-between gap-2 text-[12px]">
+                  <span className="font-semibold">{RM(r.mtd)}</span>
+                  <span className="text-[color:var(--color-ink-soft)]">of {RM(r.target)}</span>
+                </div>
+                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[color:var(--color-border)]">
+                  <div style={{ width: Math.min(100, r.pct) + "%" }} className={"h-full " + barColor} />
+                </div>
+                <div className="mt-1.5 text-[11px] text-[color:var(--color-ink-soft)]">
+                  On pace for {RM(r.projected)} · {r.pace}% of target
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
 
       <Card>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
