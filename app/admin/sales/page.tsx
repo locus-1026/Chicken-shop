@@ -24,6 +24,8 @@ import {
   CalendarDays,
   Pencil,
   X as XIcon,
+  ArrowDown,
+  ArrowUp,
 } from "lucide-react";
 
 function channelTop(mix: SalesReport["channel_mix"]) {
@@ -42,6 +44,11 @@ export default function AdminSalesPage() {
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [franchisees, setFranchisees] = useState<Franchisee[]>([]);
   const [editingTargets, setEditingTargets] = useState<Outlet | null>(null);
+  // Date-column sort direction ("desc" = newest first, the default).
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  // Optional exact-date filter — when set, the table scopes to that one
+  // day and a "missed" list shows which outlets skipped it.
+  const [filterDate, setFilterDate] = useState<string>("");
 
   // Pull every sales report across every outlet (RLS allows admin to see all).
   useEffect(() => {
@@ -134,16 +141,20 @@ export default function AdminSalesPage() {
     return { rows, groupMtd, groupTarget, groupPct, monthLabel, daysElapsed, daysInMonth };
   }, [outlets, allReports]);
 
-  // Recent submissions across every outlet.
+  // Recent submissions across every outlet. Respect the user's search,
+  // outlet filter, exact-date filter, and date sort direction. When a
+  // specific date is picked we show ALL matching rows (not capped at 30)
+  // so HQ can see every submission for that day.
   const recentRows = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return allReports
+    const list = allReports
       .map((r) => {
         const outlet = outlets.find((o) => o.id === r.outlet_id);
         const franchisee = outlet ? franchisees.find((f) => f.id === outlet.franchisee_id) : undefined;
         return { ...r, outlet, franchisee };
       })
       .filter((r) => (filterOutlet === "all" ? true : r.outlet?.id === filterOutlet))
+      .filter((r) => (filterDate ? r.report_date === filterDate : true))
       .filter((r) =>
         q
           ? (r.outlet?.outlet_code ?? "").toLowerCase().includes(q) ||
@@ -151,9 +162,29 @@ export default function AdminSalesPage() {
             (r.franchisee?.owner_name ?? "").toLowerCase().includes(q)
           : true
       )
-      .sort((a, b) => (a.report_date < b.report_date ? 1 : -1))
-      .slice(0, 30);
-  }, [query, filterOutlet, allReports, outlets, franchisees]);
+      .sort((a, b) => {
+        const cmp = a.report_date < b.report_date ? -1 : a.report_date > b.report_date ? 1 : 0;
+        return sortDir === "asc" ? cmp : -cmp;
+      });
+    // Only cap when NOT filtering to a specific date — otherwise HQ might
+    // miss rows that fell outside the top 30.
+    return filterDate ? list : list.slice(0, 30);
+  }, [query, filterOutlet, filterDate, sortDir, allReports, outlets, franchisees]);
+
+  // Who didn't submit on the picked date. Only meaningful when filterDate
+  // is set; otherwise we just show "missing today" via the existing cards.
+  const missedOnDate = useMemo(() => {
+    if (!filterDate) return [];
+    const submittedOutletIds = new Set(
+      allReports.filter((r) => r.report_date === filterDate).map((r) => r.outlet_id)
+    );
+    return outlets
+      .filter((o) => !submittedOutletIds.has(o.id))
+      .map((o) => ({
+        outlet: o,
+        franchisee: franchisees.find((f) => f.id === o.franchisee_id),
+      }));
+  }, [filterDate, allReports, outlets, franchisees]);
 
   const exportCsv = () => {
     const rows = [
@@ -392,7 +423,11 @@ export default function AdminSalesPage() {
         <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle>Recent submissions</CardTitle>
-            <CardSubtitle>Latest 30 rows across every outlet.</CardSubtitle>
+            <CardSubtitle>
+              {filterDate
+                ? `Submissions on ${formatDate(filterDate)} · ${missedOnDate.length} outlet${missedOnDate.length === 1 ? "" : "s"} missed`
+                : "Latest 30 rows across every outlet. Click Date to flip the sort."}
+            </CardSubtitle>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
@@ -403,6 +438,27 @@ export default function AdminSalesPage() {
                 placeholder="Outlet, owner, location…"
                 className="w-56 rounded-full border border-[color:var(--color-border)] bg-white py-1.5 pl-8 pr-3 text-sm focus:border-[color:var(--color-brand)] focus:outline-none"
               />
+            </div>
+            <div className="flex items-center gap-1">
+              <input
+                type="date"
+                value={filterDate}
+                max={today}
+                onChange={(e) => setFilterDate(e.target.value)}
+                className="rounded-full border border-[color:var(--color-border)] bg-white px-3 py-1.5 text-sm"
+                aria-label="Filter by specific date"
+                title="Pick a date to see who submitted and who missed"
+              />
+              {filterDate && (
+                <button
+                  onClick={() => setFilterDate("")}
+                  className="rounded-full border border-[color:var(--color-border)] bg-white p-1.5 text-[color:var(--color-ink-soft)] hover:border-[color:var(--color-brand)] hover:text-[color:var(--color-brand-700)]"
+                  aria-label="Clear date filter"
+                  title="Clear date filter"
+                >
+                  <XIcon size={12} />
+                </button>
+              )}
             </div>
             <select
               value={filterOutlet}
@@ -420,10 +476,51 @@ export default function AdminSalesPage() {
           </div>
         </div>
 
+        {/* When a specific date is picked, show who missed it so HQ can
+            act on it (nudge / flag). Hidden otherwise to keep the card
+            focused on the table. */}
+        {filterDate && missedOnDate.length > 0 && (
+          <div className="border-t border-[color:var(--color-border)] bg-[color:var(--color-danger-soft)]/40 px-4 py-3">
+            <div className="flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wider text-[color:var(--color-danger)]">
+              <AlertCircle size={14} /> Missed on {formatDate(filterDate)} · {missedOnDate.length}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {missedOnDate.map((m) => (
+                <Link
+                  key={m.outlet.id}
+                  href={`/admin/outlets/${m.outlet.outlet_code}`}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--color-danger)]/40 bg-white px-3 py-1 text-[12px] font-medium hover:border-[color:var(--color-danger)]"
+                  title={`${m.outlet.location} · Owner ${m.franchisee?.owner_name ?? "—"}`}
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--color-danger)]" />
+                  {m.outlet.outlet_code}
+                  <span className="text-[color:var(--color-ink-soft)]">·</span>
+                  <span className="text-[color:var(--color-ink-soft)]">{m.franchisee?.owner_name ?? "—"}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
+        {filterDate && missedOnDate.length === 0 && (
+          <div className="border-t border-[color:var(--color-border)] bg-[color:var(--color-success-soft)]/50 px-4 py-2.5 text-[12px] font-medium text-[color:var(--color-success)]">
+            <Check size={12} className="mr-1.5 inline -mt-0.5" />
+            Every outlet submitted on {formatDate(filterDate)}.
+          </div>
+        )}
+
         <table className="w-full text-sm">
           <thead className="bg-[color:var(--color-brand-50)] text-left text-[12px] uppercase tracking-wide text-[color:var(--color-brand-700)]">
             <tr>
-              <th className="px-4 py-3">Date</th>
+              <th className="px-4 py-3">
+                <button
+                  onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+                  className="inline-flex items-center gap-1 hover:text-[color:var(--color-brand)]"
+                  title={`Sort ${sortDir === "asc" ? "newest first" : "oldest first"}`}
+                >
+                  Date
+                  {sortDir === "asc" ? <ArrowUp size={11} /> : <ArrowDown size={11} />}
+                </button>
+              </th>
               <th className="px-4 py-3">Outlet</th>
               <th className="px-4 py-3">Owner</th>
               <th className="px-4 py-3 text-right">Gross</th>
@@ -462,7 +559,7 @@ export default function AdminSalesPage() {
                     <ChannelIcon mix={r.channel_mix} /> {channelTop(r.channel_mix)}
                   </td>
                   <td className="px-4 py-3 text-[12px] text-[color:var(--color-ink-soft)]">
-                    {r.beverage_pct !== undefined ? `${r.beverage_pct}%` : "—"}
+                    {r.beverage_pct != null ? `${r.beverage_pct}%` : "—"}
                   </td>
                 </tr>
               ))
