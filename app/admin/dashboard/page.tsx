@@ -210,7 +210,7 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-6">
       <Stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi href="/admin/franchisees" label="Monthly sales"       value={RM(totalSales)}                sub={`${Math.round((totalSales/totalTarget)*100)}% of RM ${totalTarget.toLocaleString()} target`} />
+        <Kpi href="/admin/sales"       label="Monthly sales"       value={RM(totalSales)}                sub={`${Math.round((totalSales/totalTarget)*100)}% of RM ${totalTarget.toLocaleString()} target`} />
         <Kpi href="/admin/royalties"   label="Royalties collected" value={RM(totalRoyalties)}            sub="Last 3 months, settled" />
         <ComplianceKpi score={avgAuditScore} />
         <Kpi href="/admin/training"    label="Training completion" value={`${trainingCompletion}%`}       sub="Across all users · target 90%" />
