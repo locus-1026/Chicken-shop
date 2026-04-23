@@ -568,37 +568,6 @@ export default function AdminSalesPage() {
         </table>
       </Card>
 
-      {missing.length > 0 && (
-        <Card className="!border-[color:var(--color-warning)] bg-[color:var(--color-warning-soft)]">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <CardTitle>
-                <span className="inline-flex items-center gap-2"><AlertCircle size={16} className="text-[color:var(--color-warning)]" /> Still waiting on</span>
-              </CardTitle>
-              <CardSubtitle>These outlets haven't reported today.</CardSubtitle>
-            </div>
-            <Button size="sm" variant="outline" onClick={nudgeMissing}>
-              <Bell size={14} /> Nudge all
-            </Button>
-          </div>
-          <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-            {missing.map((m) => (
-              <li key={m.outlet.id}>
-                <Link href={`/admin/outlets/${m.outlet.outlet_code}`} className="flex items-center justify-between rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2.5 hover:border-[color:var(--color-brand-200)]">
-                  <div>
-                    <div className="text-sm font-semibold">{m.outlet.outlet_code} · {m.outlet.location}</div>
-                    <div className="text-[11px] text-[color:var(--color-ink-soft)]">
-                      Owner {m.franchisee?.owner_name ?? "—"} · Last in {m.latest ? formatDate(m.latest.report_date) : "never"}
-                    </div>
-                  </div>
-                  <Pill tone="warning">Pending</Pill>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
-
       {editingTargets && (
         <TargetEditor
           outlet={editingTargets}
