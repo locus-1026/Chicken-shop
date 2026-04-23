@@ -27,6 +27,8 @@ export default function AdminDashboard() {
   // the per-outlet collection grid has to iterate real outlets (mockOutlets
   // use "o-1" style ids which never match the real outlet_id column).
   const [realOutlets, setRealOutlets] = useState<Outlet[]>([]);
+  // Real month-to-date sales, so the 'Monthly sales' KPI matches what /admin/sales shows.
+  const [mtdByOutlet, setMtdByOutlet] = useState<Record<string, number>>({});
   // Real franchisees from Supabase — we need the uuid to actually send a
   // notification (mockFranchisees ids like "f-1" don't link to anything).
   const [realFranchisees, setRealFranchisees] = useState<Franchisee[]>([]);
@@ -46,7 +48,8 @@ export default function AdminDashboard() {
     }
     const supabase = createSupabaseBrowserClient();
     const loadAll = async () => {
-      const [{ data: roys }, { data: fs }, { data: profs }, { data: notifs }, { data: outs }] = await Promise.all([
+      const monthPrefix = new Date().toISOString().slice(0, 7); // "2026-04"
+      const [{ data: roys }, { data: fs }, { data: profs }, { data: notifs }, { data: outs }, { data: mtdRows }] = await Promise.all([
         supabase
           .from("royalties")
           .select("id, outlet_id, gross_sales, royalty_amount, marketing_fee, due_date, paid_at, status, period:billing_period")
@@ -59,7 +62,17 @@ export default function AdminDashboard() {
           .not("responded_at", "is", null)
           .order("responded_at", { ascending: false }),
         supabase.from("outlets").select("*").order("outlet_code"),
+        supabase
+          .from("sales_reports")
+          .select("outlet_id, gross_sales")
+          .gte("report_date", `${monthPrefix}-01`)
+          .lte("report_date", `${monthPrefix}-31`),
       ]);
+      const mtd: Record<string, number> = {};
+      for (const r of ((mtdRows ?? []) as { outlet_id: string; gross_sales: number }[])) {
+        mtd[r.outlet_id] = (mtd[r.outlet_id] ?? 0) + r.gross_sales;
+      }
+      setMtdByOutlet(mtd);
       setRealFranchisees((fs ?? []) as Franchisee[]);
       setRealOutlets((outs ?? []) as Outlet[]);
       // Resolve each response back to its franchisee via profiles.
@@ -91,6 +104,7 @@ export default function AdminDashboard() {
     const channel = supabase
       .channel("admin-dashboard-responses")
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "notifications" }, loadAll)
+      .on("postgres_changes", { event: "*", schema: "public", table: "sales_reports" }, loadAll)
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, []);
@@ -98,8 +112,15 @@ export default function AdminDashboard() {
   const isPaid = (r: Royalty) => r.status === "paid" || !!verifiedByRoyalty[r.id];
   const isOverdue = (r: Royalty) => !isPaid(r) && (r.status === "overdue" || daysUntil(r.due_date) < 0);
 
-  const totalSales = mockOutlets.reduce((s, o) => s + o.monthly_actual, 0);
-  const totalTarget = mockOutlets.reduce((s, o) => s + o.monthly_target, 0);
+  // Prefer real MTD sums + real targets (matches /admin/sales). Falls back
+  // to mockOutlets while the live data is still loading on first paint so
+  // the KPI never flashes '0'.
+  const totalSales = realOutlets.length > 0
+    ? realOutlets.reduce((s, o) => s + (mtdByOutlet[o.id] ?? 0), 0)
+    : mockOutlets.reduce((s, o) => s + o.monthly_actual, 0);
+  const totalTarget = realOutlets.length > 0
+    ? realOutlets.reduce((s, o) => s + (o.monthly_target ?? 0), 0)
+    : mockOutlets.reduce((s, o) => s + o.monthly_target, 0);
   const totalRoyalties = royalties
     .filter(isPaid)
     .reduce((s, r) => s + r.royalty_amount + r.marketing_fee, 0);
