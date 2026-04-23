@@ -139,7 +139,10 @@ function PortalShell({ children }: { children: React.ReactNode }) {
     ]);
 
     // Royalty alert: rejected proofs OR overdue unpaid statements
-    const today = new Date().toISOString().slice(0, 10);
+    // Local YYYY-MM-DD — UTC from toISOString can be yesterday in GMT+8,
+    // which makes the calendar badge disagree with the calendar page.
+    const _d = new Date();
+    const today = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, "0")}-${String(_d.getDate()).padStart(2, "0")}`;
     const unpaidOverdue = ((roys ?? []) as { id: string; status: string; due_date: string }[])
       .filter((r) => r.status !== "paid" && r.due_date < today).length;
     const { data: rejectedProofs } = await supabase
@@ -232,29 +235,25 @@ function PortalShell({ children }: { children: React.ReactNode }) {
     const completedCount = ((mods ?? []) as { id: string }[]).filter((m) => completedSet.has(m.id)).length;
     setTrainingAlert(Math.max(0, totalMods - completedCount));
 
-    // Calendar alert: events scheduled for today that haven't happened yet.
-    // Coaching calls after "now"; royalty due today (all-day) with status
-    // still unpaid. Badge drops after each time passes or the due date is
-    // marked paid.
-    const now = new Date();
-    const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString();
-    const nowIso = now.toISOString();
-    const [{ data: upCoaching }, { data: upRoyalties }] = await Promise.all([
-      supabase
-        .from("notifications")
-        .select("id")
-        .eq("recipient_id", profile.id)
-        .eq("kind", "coaching_call")
-        .gte("scheduled_at", nowIso)
-        .lte("scheduled_at", endOfToday),
-      supabase
-        .from("royalties")
-        .select("id")
-        .eq("outlet_id", outlet.id)
-        .neq("status", "paid")
-        .eq("due_date", today),
-    ]);
-    setCalendarAlert((upCoaching?.length ?? 0) + (upRoyalties?.length ?? 0));
+    // Calendar alert: every upcoming coaching call for this franchisee
+    // (scheduled date today or later — compared as YYYY-MM-DD so timezones
+    // don't drop events) + royalties due today still unpaid. Matches the
+    // calendar page's "upcoming" dots on the week strip.
+    const { data: allCoaching } = await supabase
+      .from("notifications")
+      .select("id, scheduled_at")
+      .eq("recipient_id", profile.id)
+      .eq("kind", "coaching_call")
+      .not("scheduled_at", "is", null);
+    const upcomingCoaching = ((allCoaching ?? []) as { scheduled_at: string }[])
+      .filter((c) => c.scheduled_at.slice(0, 10) >= today).length;
+    const { data: upRoyalties } = await supabase
+      .from("royalties")
+      .select("id")
+      .eq("outlet_id", outlet.id)
+      .neq("status", "paid")
+      .eq("due_date", today);
+    setCalendarAlert(upcomingCoaching + (upRoyalties?.length ?? 0));
   }, [supabase, outlet, profile?.id]);
 
   useEffect(() => {

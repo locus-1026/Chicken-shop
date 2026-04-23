@@ -77,6 +77,8 @@ export default function AdminCalendarPage() {
       const next = new Set([...prev, id]);
       if (typeof window !== "undefined") {
         window.localStorage.setItem("cc.admin.calendar.resolved", JSON.stringify([...next]));
+        // Nudge the sidebar Calendar badge to recompute immediately.
+        window.dispatchEvent(new Event("cc.admin.calendar-resolved"));
       }
       return next;
     });
@@ -87,6 +89,7 @@ export default function AdminCalendarPage() {
       next.delete(id);
       if (typeof window !== "undefined") {
         window.localStorage.setItem("cc.admin.calendar.resolved", JSON.stringify([...next]));
+        window.dispatchEvent(new Event("cc.admin.calendar-resolved"));
       }
       return next;
     });

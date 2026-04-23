@@ -283,7 +283,15 @@ export default function CalendarPage() {
       {/* Overdue items — always visible regardless of which week is open */}
       {(() => {
         const todayIso = toISODate(new Date());
-        const overdue = filteredAll.filter((e) => e.at.slice(0, 10) < todayIso);
+        // Only truly unhandled past items. Coaching calls the franchisee
+        // already actioned (accepted / done / declined / cancelled) are
+        // resolved — no reason to still flag them in red.
+        const handledStatuses = new Set(["accepted", "done", "declined", "cancelled"]);
+        const overdue = filteredAll.filter((e) => {
+          if (e.at.slice(0, 10) >= todayIso) return false;
+          if (e.kind === "coaching" && e.status && handledStatuses.has(e.status)) return false;
+          return true;
+        });
         if (overdue.length === 0) return null;
         return (
           <section className="rounded-[14px] border border-[color:var(--color-danger)]/50 bg-[color:var(--color-danger-soft)]/40 p-3">

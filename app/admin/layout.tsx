@@ -70,7 +70,11 @@ function AdminShell({ children }: { children: React.ReactNode }) {
     const supabase = createSupabaseBrowserClient();
 
     const recompute = async () => {
-      const today = new Date().toISOString().slice(0, 10);
+      // Local YYYY-MM-DD — toISOString gives UTC which in GMT+8 can be the
+      // previous calendar day. The calendar page uses local date for its
+      // "Upcoming coaching" KPI so the badge must match to stay in sync.
+      const _d = new Date();
+      const today = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, "0")}-${String(_d.getDate()).padStart(2, "0")}`;
       const salesSeenRaw = typeof window !== "undefined"
         ? window.localStorage.getItem("cc.admin.sales.lastSeen") : null;
       const salesSeen = salesSeenRaw ?? "1970-01-01";
@@ -159,26 +163,24 @@ function AdminShell({ children }: { children: React.ReactNode }) {
       const riskCount = auditList.filter((a) => a.risk_flag).length;
       setAtRiskAudits(Math.max(needsAudit, riskCount));
 
-      // Calendar alert: HQ-wide coaching calls still to happen today (from
-      // now onwards) + any royalties due today that aren't paid yet. Badge
-      // decreases as each scheduled time passes (60s tick below).
-      const now = new Date();
-      const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString();
-      const nowIso = now.toISOString();
-      const [{ data: upCoaching }, { data: upRoyalties }] = await Promise.all([
-        supabase
-          .from("notifications")
-          .select("id")
-          .eq("kind", "coaching_call")
-          .gte("scheduled_at", nowIso)
-          .lte("scheduled_at", endOfToday),
-        supabase
-          .from("royalties")
-          .select("id")
-          .neq("status", "paid")
-          .eq("due_date", today),
-      ]);
-      setCalendarAlert((upCoaching?.length ?? 0) + (upRoyalties?.length ?? 0));
+      // Calendar alert: mirrors the "Upcoming coaching" KPI on /admin/calendar.
+      // Counts every coaching call whose scheduled date is today or later
+      // (compared by date-string so timezone quirks don't drop events), plus
+      // any royalty statement due today that still isn't paid. Overdue items
+      // live in the "Needs action" banner — not counted here.
+      const { data: allCoaching } = await supabase
+        .from("notifications")
+        .select("id, scheduled_at")
+        .eq("kind", "coaching_call")
+        .not("scheduled_at", "is", null);
+      const upcomingCoaching = ((allCoaching ?? []) as { scheduled_at: string }[])
+        .filter((c) => c.scheduled_at.slice(0, 10) >= today).length;
+      const { data: upRoyalties } = await supabase
+        .from("royalties")
+        .select("id")
+        .neq("status", "paid")
+        .eq("due_date", today);
+      setCalendarAlert(upcomingCoaching + (upRoyalties?.length ?? 0));
     };
 
     recompute();
@@ -199,13 +201,18 @@ function AdminShell({ children }: { children: React.ReactNode }) {
     const onSeen = () => recompute();
     window.addEventListener("cc.admin.sales-seen", onSeen);
     window.addEventListener("cc.admin.support-seen", onSeen);
+    // Calendar "Resolved" button on /admin/calendar dispatches this — lets
+    // the sidebar badge drop instantly instead of waiting for the 30s poll.
+    window.addEventListener("cc.admin.calendar-resolved", onSeen);
 
-    // Fallback poll in case Realtime isn't enabled on a table yet.
+    // Fallback poll in case Realtime isn't enabled on a table yet. Also
+    // keeps `calendarAlert` fresh so past coaching times stop counting.
     const id = setInterval(recompute, 30000);
     return () => {
       supabase.removeChannel(channel);
       window.removeEventListener("cc.admin.sales-seen", onSeen);
       window.removeEventListener("cc.admin.support-seen", onSeen);
+      window.removeEventListener("cc.admin.calendar-resolved", onSeen);
       clearInterval(id);
     };
   }, [profile?.role]);
