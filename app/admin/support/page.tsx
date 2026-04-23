@@ -157,6 +157,15 @@ export default function AdminSupportPage() {
     ? messages.filter((m) => m.ticket_id === openTicket.id).sort((a, b) => (a.created_at < b.created_at ? -1 : 1))
     : [];
 
+  // Suppress the Shell's generic "Back" pill while the thread view is
+  // open — the inline "Back to all issues" link replaces it.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (openTicket) document.body.classList.add("cc-hide-shell-back");
+    else document.body.classList.remove("cc-hide-shell-back");
+    return () => { document.body.classList.remove("cc-hide-shell-back"); };
+  }, [openTicket]);
+
   if (openTicket) {
     const o = outletFor(openTicket.outlet_id);
     const f = franchiseeFor(openTicket.outlet_id);

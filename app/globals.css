@@ -47,3 +47,11 @@ html, body {
   0% { background-position: 100% 0; }
   100% { background-position: 0 0; }
 }
+
+/* When a page provides its own contextual back link (e.g. support ticket
+   thread's "Back to all issues"), it can set this class on <body> to
+   suppress the generic Shell "Back" pill so users don't see two back
+   buttons stacked on top of each other. */
+body.cc-hide-shell-back [data-shell-back] {
+  display: none;
+}

@@ -120,9 +120,12 @@ export function Shell({
           className="flex-1 px-5 pb-24 pt-5 lg:px-10 lg:pb-10 lg:pt-8"
         >
           {/* Back button is hidden on the portal/admin home pages — nothing
-              meaningful to go back to from the root. */}
+              meaningful to go back to from the root. The data attribute
+              lets pages that provide their own contextual back link
+              (e.g. "Back to all issues" on a support thread) suppress
+              this one via CSS — see `.cc-hide-shell-back` in globals.css. */}
           {!isHome && (
-            <div className="mb-4">
+            <div className="mb-4" data-shell-back>
               <BackButton label="Back" fallbackHref={pathname?.startsWith("/admin") ? "/admin/dashboard" : "/portal"} size="sm" />
             </div>
           )}

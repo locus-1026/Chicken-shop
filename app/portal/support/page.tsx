@@ -294,6 +294,14 @@ function TicketThread({
   onNudgeHq: () => void;
   onBack: () => void;
 }) {
+  // Hide Shell's generic "Back" pill while we're in a ticket thread —
+  // the inline "Back to all issues" link is a clearer, context-aware
+  // replacement. CSS selector lives in app/globals.css.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.body.classList.add("cc-hide-shell-back");
+    return () => { document.body.classList.remove("cc-hide-shell-back"); };
+  }, []);
   // Figure out whether we're "waiting on HQ" — the latest message is from
   // the franchisee (or there are no messages yet after they opened it)
   // AND the ticket isn't resolved. Drives the waiting banner + nudge
