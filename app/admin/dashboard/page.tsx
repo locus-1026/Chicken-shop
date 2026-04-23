@@ -48,12 +48,17 @@ export default function AdminDashboard() {
     }
     const supabase = createSupabaseBrowserClient();
     const loadAll = async () => {
-      // Build safe month bounds. Avoid '-31' strings (April has no 31st,
-      // Supabase rejects the cast and returns 0 rows — that was the
-      // 'RM 0' bug on the dashboard KPI).
+      // Build safe month bounds in LOCAL time. Don't use toISOString() —
+      // in GMT+8 that converts '2026-04-01 00:00 local' to '2026-03-31
+      // 16:00 UTC', which then sliced back to '2026-03-31' and pulled
+      // an extra day of sales into the MTD sum (RM 26,005 drift vs
+      // /admin/sales). Formatting YYYY-MM-DD directly avoids the shift.
       const now = new Date();
-      const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-      const firstOfNext = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10);
+      const yy = now.getFullYear();
+      const mm = now.getMonth(); // 0-indexed
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const firstOfMonth = `${yy}-${pad(mm + 1)}-01`;
+      const firstOfNext = mm === 11 ? `${yy + 1}-01-01` : `${yy}-${pad(mm + 2)}-01`;
       const [{ data: roys }, { data: fs }, { data: profs }, { data: notifs }, { data: outs }, { data: mtdRows }] = await Promise.all([
         supabase
           .from("royalties")
