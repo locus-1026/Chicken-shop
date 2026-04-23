@@ -19,6 +19,7 @@ import {
   LifeBuoy,
   LogOut,
   Calendar as CalendarIcon,
+  Bell,
 } from "lucide-react";
 
 function Gate({ children }: { children: React.ReactNode }) {
@@ -250,6 +251,21 @@ function AdminShell({ children }: { children: React.ReactNode }) {
       subtitle="Coco Chick Sdn Bhd · 5 active outlets"
       headerRight={
         <div className="flex items-center gap-2">
+          {/* Quick link to the Help inbox — badge mirrors the sidebar
+              "Help" count so HQ can jump to open tickets from any page. */}
+          <button
+            onClick={() => router.push("/admin/support")}
+            className="relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--color-border)] bg-white text-[color:var(--color-ink-soft)] hover:border-[color:var(--color-brand)] hover:text-[color:var(--color-brand-700)]"
+            aria-label="Open support tickets"
+            title={openTickets > 0 ? `${openTickets} open ticket${openTickets === 1 ? "" : "s"} — click to view` : "View support tickets"}
+          >
+            <Bell size={16} />
+            {openTickets > 0 && (
+              <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[color:var(--color-danger)] px-1 text-[10px] font-bold text-white">
+                {openTickets > 9 ? "9+" : openTickets}
+              </span>
+            )}
+          </button>
           <span className="hidden md:inline-flex items-center gap-2 rounded-full border border-[color:var(--color-border)] bg-white px-3 py-1.5 text-[12px] font-medium">
             {profile?.email}
           </span>
