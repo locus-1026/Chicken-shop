@@ -147,16 +147,26 @@ export default function AdminDashboard() {
     const latest = mockAudits
       .filter((a) => a.outlet_id === o.id)
       .sort((a, b) => (a.audit_date < b.audit_date ? 1 : -1))[0];
+    // Match the mock outlet to its real counterpart via outlet_code so
+    // traffic-lights + Top 3 performers use the SAME MTD number and
+    // monthly_target that /admin/sales shows. Without this the two pages
+    // disagreed (96% vs 63%) because the mock seed was hard-coded.
+    const real = realOutlets.find((x) => x.outlet_code === o.outlet_code);
+    const realMtd = real ? (mtdByOutlet[real.id] ?? 0) : o.monthly_actual;
+    const realTarget = real?.monthly_target ?? o.monthly_target;
     const latestRoyalty = royalties
-      .filter((r) => r.outlet_id === o.id)
+      .filter((r) => r.outlet_id === (real?.id ?? o.id))
       .sort((a, b) => (a.period < b.period ? 1 : -1))[0];
-    const pct = (o.monthly_actual / o.monthly_target) * 100;
+    const pct = realTarget > 0 ? (realMtd / realTarget) * 100 : 0;
     const overdue = latestRoyalty ? isOverdue(latestRoyalty) : false;
     let tone: "success" | "warning" | "danger";
     if (overdue || (latest && latest.score < 70)) tone = "danger";
     else if (pct >= 90 && latest && latest.score >= 85) tone = "success";
     else tone = "warning";
-    return { outlet: o, franchisee: f, audit: latest, royalty: latestRoyalty, pct, tone };
+    // Expose real numbers so the cards below display the same RM values
+    // as /admin/sales instead of the stale seed values.
+    const outletForDisplay = { ...o, monthly_actual: realMtd, monthly_target: realTarget };
+    return { outlet: outletForDisplay, franchisee: f, audit: latest, royalty: latestRoyalty, pct, tone };
   });
 
   const top = [...outletsWithStatus].sort((a, b) => b.pct - a.pct).slice(0, 3);
