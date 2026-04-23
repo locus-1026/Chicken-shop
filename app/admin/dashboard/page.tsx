@@ -164,6 +164,10 @@ export default function AdminDashboard() {
   // attention until the 1st of next month, when the list resets.
   const thisMonthKey = new Date().toISOString().slice(0, 7); // "2026-04"
   const bottom = [...outletsWithStatus]
+    // Only outlets that actually need HQ attention — amber or red. Healthy
+    // outlets (green: ≥90% sales, audit ≥85, no overdue royalty) don't
+    // belong in "Needs attention" even if they're the lowest of the bunch.
+    .filter((x) => x.tone !== "success")
     .filter((x) => {
       const real = realFranchisees.find((f) => f.business_name === x.franchisee.business_name);
       const solved = real ? actioned[real.id]?.solved : undefined;
@@ -292,6 +296,11 @@ export default function AdminDashboard() {
             <span className="inline-flex items-center gap-2"><AlertTriangle size={16} className="text-[color:var(--color-warning)]"/> Needs attention</span>
           </CardTitle>
           <CardSubtitle>Not shame — just where HQ should focus.</CardSubtitle>
+          {bottom.length === 0 && (
+            <div className="mt-3 rounded-xl border border-dashed border-[color:var(--color-border)] bg-white px-3 py-6 text-center text-[13px] text-[color:var(--color-ink-soft)]">
+              All outlets are on track this month. Nothing to action.
+            </div>
+          )}
           <ul className="mt-3 space-y-2">
             {bottom.map((x) => {
               const real = realFranchisees.find((f) => f.business_name === x.franchisee.business_name);
