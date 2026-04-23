@@ -159,8 +159,12 @@ export default function AdminDashboard() {
       .sort((a, b) => (a.period < b.period ? 1 : -1))[0];
     const pct = realTarget > 0 ? (realMtd / realTarget) * 100 : 0;
     const overdue = latestRoyalty ? isOverdue(latestRoyalty) : false;
+    // Red (danger) = any hard-fail: overdue royalty, audit <70, OR sales <70%.
+    //                Sales that low is "can't make it without intervention".
+    // Green (success) = sales ≥90% AND audit ≥85 AND no overdue royalty.
+    // Amber (warning) = everything in between (incl. "no audit yet").
     let tone: "success" | "warning" | "danger";
-    if (overdue || (latest && latest.score < 70)) tone = "danger";
+    if (overdue || (latest && latest.score < 70) || pct < 70) tone = "danger";
     else if (pct >= 90 && latest && latest.score >= 85) tone = "success";
     else tone = "warning";
     // Expose real numbers so the cards below display the same RM values
@@ -175,16 +179,25 @@ export default function AdminDashboard() {
   const thisMonthKey = new Date().toISOString().slice(0, 7); // "2026-04"
   const bottom = [...outletsWithStatus]
     // Only outlets that actually need HQ attention — amber or red. Healthy
-    // outlets (green: ≥90% sales, audit ≥85, no overdue royalty) don't
-    // belong in "Needs attention" even if they're the lowest of the bunch.
+    // outlets (green) don't belong in "Needs attention" even if they're the
+    // lowest of the bunch.
     .filter((x) => x.tone !== "success")
+    // "Mark solved" only suppresses amber outlets. Red outlets (overdue
+    // royalty / failed audit / sales <70%) always show — solving doesn't
+    // make a critical issue disappear from HQ's radar.
     .filter((x) => {
+      if (x.tone === "danger") return true;
       const real = realFranchisees.find((f) => f.business_name === x.franchisee.business_name);
       const solved = real ? actioned[real.id]?.solved : undefined;
       return !(solved && solved.slice(0, 7) === thisMonthKey);
     })
-    .sort((a, b) => a.pct - b.pct)
-    .slice(0, 3);
+    // Red first, then amber. Within the same tone, lowest sales % first so
+    // the most urgent thing is always at the top.
+    .sort((a, b) => {
+      const rank = (t: "success" | "warning" | "danger") => (t === "danger" ? 0 : t === "warning" ? 1 : 2);
+      const d = rank(a.tone) - rank(b.tone);
+      return d !== 0 ? d : a.pct - b.pct;
+    });
 
   // Last 3 distinct billing periods from the real royalties table.
   const recentPeriods = [...new Set(royalties.map((r) => r.period))].slice(0, 3);
