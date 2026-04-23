@@ -315,12 +315,44 @@ export default function AdminDashboard() {
             {bottom.map((x) => {
               const real = realFranchisees.find((f) => f.business_name === x.franchisee.business_name);
               const history = real ? actioned[real.id] : undefined;
+              // Build the list of concrete reasons this outlet is flagged so
+              // HQ sees the actual problem (e.g. "Audit 68" or "No audit in
+              // 30d") instead of just a sales-only pill that might be green.
+              const reasons: { label: string; tone: "danger" | "warning" }[] = [];
+              if (x.royalty && isOverdue(x.royalty)) {
+                reasons.push({ label: "Royalty overdue", tone: "danger" });
+              }
+              if (x.audit) {
+                if (x.audit.score < 70) reasons.push({ label: `Audit ${x.audit.score} (<70)`, tone: "danger" });
+                else if (x.audit.score < 85) reasons.push({ label: `Audit ${x.audit.score} (<85)`, tone: "warning" });
+              } else {
+                reasons.push({ label: "No audit on record", tone: "warning" });
+              }
+              if (x.pct < 70) reasons.push({ label: `Sales ${Math.round(x.pct)}% (<70%)`, tone: "danger" });
+              else if (x.pct < 90) reasons.push({ label: `Sales ${Math.round(x.pct)}% (<90%)`, tone: "warning" });
               return (
               <li key={x.outlet.id} className="rounded-xl border border-[color:var(--color-border)] bg-white px-3 py-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium">{x.outlet.outlet_code} · {x.outlet.location}</div>
                     <div className="text-[12px] text-[color:var(--color-ink-soft)]">Owner {x.franchisee.owner_name}</div>
+                    {reasons.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {reasons.map((r, i) => (
+                          <span
+                            key={i}
+                            className={
+                              "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold " +
+                              (r.tone === "danger"
+                                ? "bg-[color:var(--color-danger-soft)] text-[color:var(--color-danger)]"
+                                : "bg-[color:var(--color-warning-soft)] text-[color:var(--color-warning)]")
+                            }
+                          >
+                            {r.label}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     {history?.coach && (
                       <div className="mt-0.5 text-[11px] font-medium text-[color:var(--color-success)]">
                         ✓ Coaching scheduled · {new Date(history.coach).toLocaleDateString()}
