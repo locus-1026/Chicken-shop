@@ -53,6 +53,33 @@ export default function AdminCalendarPage() {
   const [filter, setFilter] = useState<Filter>("all");
   const [selectedDate, setSelectedDate] = useState<string>(toISODate(new Date()));
   const [weekAnchor, setWeekAnchor] = useState<Date>(startOfWeek(new Date()));
+  // Admin can dismiss an overdue row manually — persisted to localStorage
+  // so it stays hidden across refreshes.
+  const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const raw = window.localStorage.getItem("cc.admin.calendar.resolved");
+    if (raw) { try { setResolvedIds(new Set(JSON.parse(raw))); } catch { /* ignore */ } }
+  }, []);
+  const markResolved = (id: string) => {
+    setResolvedIds((prev) => {
+      const next = new Set([...prev, id]);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("cc.admin.calendar.resolved", JSON.stringify([...next]));
+      }
+      return next;
+    });
+  };
+  const unmarkResolved = (id: string) => {
+    setResolvedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("cc.admin.calendar.resolved", JSON.stringify([...next]));
+      }
+      return next;
+    });
+  };
 
   const load = useCallback(async () => {
     const [{ data: coaching }, { data: royalties }, { data: outlets }, { data: franchisees }, { data: profs }] = await Promise.all([
@@ -237,40 +264,103 @@ export default function AdminCalendarPage() {
         <LegendDot color="var(--color-danger)" label="Overdue" />
       </div>
 
-      {/* Overdue / out-of-week items — persistent, not tied to the current week view */}
+      {/* Overdue / out-of-week items — persistent, not tied to the current week view.
+          Auto-excludes coaching calls that have been accepted/done/cancelled
+          (those events happened or were dismissed), and anything the admin has
+          manually marked resolved via the button. */}
       {(() => {
         const todayIso = toISODate(new Date());
-        const overdue = filteredAll.filter((e) => e.at.slice(0, 10) < todayIso);
-        if (overdue.length === 0) return null;
+        const handledStatuses = new Set(["accepted", "done", "declined", "cancelled"]);
+        const overdue = filteredAll.filter((e) => {
+          if (e.at.slice(0, 10) >= todayIso) return false;
+          if (resolvedIds.has(e.id)) return false;
+          // Coaching: if franchisee already accepted / it's done / cancelled,
+          // it's not a 'needs-action' item anymore.
+          if (e.kind === "coaching" && e.status && handledStatuses.has(e.status)) return false;
+          return true;
+        });
+        const dismissed = filteredAll.filter((e) =>
+          e.at.slice(0, 10) < todayIso && resolvedIds.has(e.id)
+        );
+
+        if (overdue.length === 0 && dismissed.length === 0) return null;
+
         return (
           <section className="rounded-[14px] border border-[color:var(--color-danger)]/50 bg-[color:var(--color-danger-soft)]/40 p-3">
-            <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wider text-[color:var(--color-danger)]">
-              <AlertTriangle size={14} /> Overdue · {overdue.length}
-              <span className="ml-1 font-normal normal-case tracking-normal text-[color:var(--color-ink-soft)]">(not on this week — jump to the date)</span>
-            </div>
-            <div className="space-y-2">
-              {overdue.map((e) => {
-                const d = new Date(e.at);
-                return (
-                  <button
-                    key={"od-" + e.id}
-                    onClick={() => {
-                      setWeekAnchor(startOfWeek(d));
-                      setSelectedDate(toISODate(d));
-                    }}
-                    className="flex w-full items-center justify-between gap-3 rounded-[10px] border border-[color:var(--color-border)] bg-white p-3 text-left hover:border-[color:var(--color-danger)]"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-[13px] font-semibold">{e.title}</div>
-                      <div className="mt-0.5 text-[12px] text-[color:var(--color-ink-soft)]">
-                        {e.subject} · was due {d.toLocaleDateString("en-MY", { weekday: "short", day: "numeric", month: "short" })} ({Math.abs(daysUntil(e.at))}d ago)
+            {overdue.length > 0 && (
+              <>
+                <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wider text-[color:var(--color-danger)]">
+                  <AlertTriangle size={14} /> Needs action · {overdue.length}
+                  <span className="ml-1 font-normal normal-case tracking-normal text-[color:var(--color-ink-soft)]">(past due — click to jump or mark resolved)</span>
+                </div>
+                <div className="space-y-2">
+                  {overdue.map((e) => {
+                    const d = new Date(e.at);
+                    return (
+                      <div
+                        key={"od-" + e.id}
+                        className="flex items-center justify-between gap-3 rounded-[10px] border border-[color:var(--color-border)] bg-white p-3"
+                      >
+                        <button
+                          onClick={() => {
+                            setWeekAnchor(startOfWeek(d));
+                            setSelectedDate(toISODate(d));
+                          }}
+                          className="min-w-0 flex-1 text-left hover:text-[color:var(--color-brand-700)]"
+                        >
+                          <div className="text-[13px] font-semibold">{e.title}</div>
+                          <div className="mt-0.5 text-[12px] text-[color:var(--color-ink-soft)]">
+                            {e.subject} · was due {d.toLocaleDateString("en-MY", { weekday: "short", day: "numeric", month: "short" })} ({Math.abs(daysUntil(e.at))}d ago)
+                          </div>
+                        </button>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <StatusPill e={e} />
+                          <button
+                            onClick={() => markResolved(e.id)}
+                            className="inline-flex items-center gap-1 rounded-full border border-[color:var(--color-border)] bg-white px-2 py-0.5 text-[11px] font-medium text-[color:var(--color-ink-soft)] hover:border-[color:var(--color-success)] hover:text-[color:var(--color-success)]"
+                            title="Mark resolved — hides this row"
+                          >
+                            <CheckCircle2 size={11} /> Resolved
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                    <StatusPill e={e} />
-                  </button>
-                );
-              })}
-            </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {dismissed.length > 0 && (
+              <details className={overdue.length > 0 ? "mt-3" : ""}>
+                <summary className="cursor-pointer text-[11px] font-medium text-[color:var(--color-ink-soft)] hover:text-[color:var(--color-ink)]">
+                  {dismissed.length} past item{dismissed.length === 1 ? "" : "s"} resolved · click to show
+                </summary>
+                <div className="mt-2 space-y-2">
+                  {dismissed.map((e) => {
+                    const d = new Date(e.at);
+                    return (
+                      <div
+                        key={"done-" + e.id}
+                        className="flex items-center justify-between gap-3 rounded-[10px] border border-[color:var(--color-border)] bg-white/70 p-3 opacity-70"
+                      >
+                        <div className="min-w-0">
+                          <div className="text-[13px] font-semibold">{e.title}</div>
+                          <div className="mt-0.5 text-[12px] text-[color:var(--color-ink-soft)]">
+                            {e.subject} · was due {d.toLocaleDateString("en-MY", { weekday: "short", day: "numeric", month: "short" })}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => unmarkResolved(e.id)}
+                          className="shrink-0 text-[11px] font-medium text-[color:var(--color-brand-700)] hover:underline"
+                        >
+                          Undo
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </details>
+            )}
           </section>
         );
       })()}
