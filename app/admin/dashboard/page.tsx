@@ -200,7 +200,9 @@ export default function AdminDashboard() {
     });
 
   // Last 3 distinct billing periods from the real royalties table.
-  const recentPeriods = [...new Set(royalties.map((r) => r.period))].slice(0, 3);
+  // `royalties` is sorted newest-first, so the 3 newest become the slice,
+  // then reversed so the table reads left-to-right oldest → newest.
+  const recentPeriods = [...new Set(royalties.map((r) => r.period))].slice(0, 3).reverse();
   // Split each month into paid vs outstanding so HQ can see collection
   // progress at a glance (green = collected, red = still owed).
   const barData = recentPeriods.map((p) => {
