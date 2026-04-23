@@ -58,6 +58,15 @@ function PortalShell({ children }: { children: React.ReactNode }) {
   const toast = useToast();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
+  // Mark the <body> with cc-portal so globals.css can re-skin cards
+  // into the softer portal style (#6).
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.body.classList.add("cc-portal");
+    document.body.classList.remove("cc-admin");
+    return () => { document.body.classList.remove("cc-portal"); };
+  }, []);
+
   // Direct-push notifications from HQ. Realtime row-insert → toast on screen.
   // Count unread for a header bell badge.
   const [unreadNotifications, setUnreadNotifications] = useState(0);
@@ -363,9 +372,19 @@ function PortalShell({ children }: { children: React.ReactNode }) {
 }
 
 function CenteredSkeleton() {
+  // Portal loading (#12) — branded splash instead of a bare bar. Sets a
+  // warmer tone than the admin dashboard-skeleton and reassures the
+  // franchisee their account is loading, not broken.
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[color:var(--color-background)]">
-      <div className="skeleton h-12 w-40" />
+    <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[color:var(--color-background)] px-6 text-center">
+      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[color:var(--color-brand)] text-2xl font-bold text-white shadow-[0_10px_28px_-12px_rgba(45,26,14,0.30)] animate-pulse">
+        C
+      </div>
+      <div>
+        <div className="text-[15px] font-semibold text-[color:var(--color-ink)]">Coco Chick</div>
+        <div className="text-[12px] text-[color:var(--color-ink-soft)]">Getting your outlet ready…</div>
+      </div>
+      <div className="skeleton mt-2 h-1.5 w-40 rounded-full" />
     </div>
   );
 }

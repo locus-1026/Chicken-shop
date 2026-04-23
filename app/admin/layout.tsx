@@ -20,6 +20,7 @@ import {
   LogOut,
   Calendar as CalendarIcon,
   Bell,
+  Building2,
 } from "lucide-react";
 
 function Gate({ children }: { children: React.ReactNode }) {
@@ -39,9 +40,33 @@ function Gate({ children }: { children: React.ReactNode }) {
 
   if (isLogin) return <>{children}</>;
   if (!ready) {
+    // Admin loading = BI-dashboard skeleton grid (matches the War Room
+    // feel) instead of a centered spinner. Makes it immediately clear
+    // that a dense dashboard is loading, not a friendly portal.
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[color:var(--color-background)]">
-        <div className="skeleton h-12 w-40" />
+      <div className="flex min-h-screen bg-[color:var(--color-background)] p-5 lg:p-10">
+        <div className="hidden lg:block w-64 shrink-0 border-r border-[color:var(--color-border)] pr-5">
+          <div className="skeleton mb-4 h-9 w-36" />
+          <div className="space-y-2">
+            {Array.from({ length: 9 }).map((_, i) => (
+              <div key={i} className="skeleton h-9 w-full" />
+            ))}
+          </div>
+        </div>
+        <div className="flex-1 lg:pl-10 space-y-5">
+          <div className="skeleton h-7 w-40" />
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="skeleton h-[92px] w-full" />
+            ))}
+          </div>
+          <div className="grid gap-4 lg:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="skeleton h-[220px] w-full" />
+            ))}
+          </div>
+          <div className="skeleton h-[320px] w-full" />
+        </div>
       </div>
     );
   }
@@ -55,6 +80,19 @@ function AdminShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const toast = useToast();
   const pathname = usePathname();
+  // Live outlet count for the header chip so "5 outlets · MY" is truth
+  // rather than a hard-coded string.
+  const [outletCount, setOutletCount] = useState<number | null>(null);
+
+  // Mark the <body> with cc-admin so globals.css can re-skin cards into
+  // the flatter admin dashboard style (#6). Removed on unmount so the
+  // portal view isn't affected if the admin signs out.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.body.classList.add("cc-admin");
+    document.body.classList.remove("cc-portal");
+    return () => { document.body.classList.remove("cc-admin"); };
+  }, []);
 
   // Live pending-work counts for the sidebar. Refreshes instantly via Supabase
   // Realtime when a franchisee submits something new. Counts represent "items
@@ -125,6 +163,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
         ((salesRows ?? []) as { outlet_id: string }[]).map((r) => r.outlet_id)
       );
       const activeOutlets = (outletRows ?? []) as { id: string }[];
+      setOutletCount(activeOutlets.length);
       const pendingOutlets = activeOutlets.filter((o) => !submittedOutletIds.has(o.id)).length;
       setPendingSales(pendingOutlets);
       void salesSeen; // no longer used; kept in scope for future diff-based UX
@@ -248,9 +287,19 @@ function AdminShell({ children }: { children: React.ReactNode }) {
     <Shell
       nav={nav}
       title="HQ Admin"
-      subtitle="Coco Chick Sdn Bhd · 5 active outlets"
+      subtitle={`Coco Chick Sdn Bhd · ${outletCount ?? "—"} active outlet${outletCount === 1 ? "" : "s"}`}
       headerRight={
         <div className="flex items-center gap-2">
+          {/* Identity lockup (#3): a shield "HQ" monogram + permanent
+              HQ ADMIN chip with a live outlet count so the page always
+              announces "you're in the command deck, not the portal". */}
+          <span className="hidden lg:inline-flex items-center gap-2 rounded-full border border-[color:var(--color-ink)] bg-[color:var(--color-ink)] px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-white">
+            <ShieldCheck size={12} /> HQ Admin
+          </span>
+          <span className="hidden xl:inline-flex items-center gap-1.5 rounded-full border border-[color:var(--color-border)] bg-white px-2.5 py-1 text-[11px] font-semibold text-[color:var(--color-ink-soft)]">
+            <Building2 size={11} />
+            {outletCount ?? "—"} outlet{outletCount === 1 ? "" : "s"} · MY
+          </span>
           {/* Quick link to the Help inbox — badge mirrors the sidebar
               "Help" count so HQ can jump to open tickets from any page. */}
           <button

@@ -55,3 +55,23 @@ html, body {
 body.cc-hide-shell-back [data-shell-back] {
   display: none;
 }
+
+/* -----------------------------------------------------------------------
+   Role-specific card skins (#6). Admin view reads as a dense BI
+   dashboard — flatter, tighter radius, no shadow so rows of data feel
+   like a grid. Portal view keeps the friendlier soft-shadow card so
+   franchisees don't feel like they're inside a spreadsheet.
+   ----------------------------------------------------------------------- */
+body.cc-admin [data-card] {
+  border-radius: 10px;
+  box-shadow: none;
+  border-color: #E8DBC6;
+}
+body.cc-admin [data-card]:hover {
+  border-color: #D9C6A9;
+}
+
+body.cc-portal [data-card] {
+  border-radius: 18px;
+  box-shadow: 0 4px 14px -8px rgba(45, 26, 14, 0.14);
+}

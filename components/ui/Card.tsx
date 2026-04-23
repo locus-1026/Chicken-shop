@@ -9,6 +9,9 @@ interface CardProps extends HTMLMotionProps<"div"> {
 export function Card({ className, interactive, children, ...rest }: CardProps) {
   return (
     <motion.div
+      // data-card lets globals.css pick up admin-vs-portal body classes
+      // and re-skin cards (admin = flatter dashboard, portal = softer).
+      data-card
       whileHover={interactive ? { y: -4, boxShadow: "0 12px 28px -14px rgba(45,26,14,0.25)" } : undefined}
       transition={{ type: "spring", stiffness: 260, damping: 22 }}
       className={cn(
