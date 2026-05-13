@@ -14,9 +14,9 @@ const KEY = "cc.admin.email";
 
 // Mock admin credentials. In production, Supabase Auth with role='admin'.
 export const adminAccounts: Record<string, string> = {
-  "admin@jifanwang.com.my":         "coco123",
-  "franchise@jifanwang.com.my":     "coco123",
-  "chan.kokweng@jifanwang.com.my":  "ceo2021",
+  "admin@cocochick.com.my":         "coco123",
+  "franchise@cocochick.com.my":     "coco123",
+  "chan.kokweng@cocochick.com.my":  "ceo2021",
 };
 
 export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
